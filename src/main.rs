@@ -16,25 +16,24 @@ pub mod einsum {
         summation_indices: Vec<char>,
     }
 
-    pub fn generate_contraction(parse: &EinsumParse) -> Option<Contraction> {
+    pub fn generate_contraction(parse: &EinsumParse) -> Result<Contraction, &str> {
         let mut input_indices = HashMap::new();
-        for s in &parse.operand_indices {
-            for c in s.chars() {
-                *input_indices.entry(c).or_insert(0) += 1;
-            }
+        for c in parse.operand_indices.iter().flat_map(|s| s.chars()) {
+            *input_indices.entry(c).or_insert(0) += 1;
         }
 
         let mut unique_indices = Vec::new();
         let mut duplicated_indices = Vec::new();
         for (&c, &n) in input_indices.iter() {
-            if n > 1 {
-                duplicated_indices.push(c);
+            let dst = if n > 1 {
+                &mut duplicated_indices
             } else {
-                unique_indices.push(c);
-            }
+                &mut unique_indices
+            };
+            dst.push(c);
         }
 
-        let output_indices = match &parse.output_indices {
+        let requested_output_indices = match &parse.output_indices {
             Some(s) => s.chars().collect(),
             _ => {
                 let mut o = unique_indices.clone();
@@ -42,13 +41,35 @@ pub mod einsum {
                 o
             }
         };
+        let mut distinct_output_indices = HashMap::new();
+        for &c in requested_output_indices.iter() {
+            *distinct_output_indices.entry(c).or_insert(0) += 1;
+        }
+        for (&c, &n) in distinct_output_indices.iter() {
+            // No duplicates
+            if n > 1 {
+                return Err("Requested output has duplicate index");
+            }
 
-        println!("Output indices: {:?}", &output_indices);
+            // Must be in inputs
+            if input_indices.get(&c).is_none() {
+                return Err("Requested output contains an index not found in inputs");
+            }
+        }
 
-        Some(Contraction {
-            operand_indices: vec![String::from("foo")],
+        let output_indices = requested_output_indices;
+        let mut summation_indices = Vec::new();
+        for (&c, _) in input_indices.iter() {
+            if distinct_output_indices.get(&c).is_none() {
+                summation_indices.push(c);
+            }
+        }
+        summation_indices.sort();
+
+        Ok(Contraction {
+            operand_indices: parse.operand_indices.clone(),
             output_indices: output_indices,
-            summation_indices: vec!['b'],
+            summation_indices: summation_indices,
         })
     }
 
@@ -90,16 +111,17 @@ fn main() {
         "ij,ij->",
         "ij,kl->",
         "ij,jk->ik",
-        "i,j,k,l,m->p",
         "ijk,jkl,klm->im",
         "ij,jk->ki",
         "ij,ja->ai",
         "ij,ja->ia",
+        "ii->i",
 
         // Implicit
         "ij,k",
         "i",
-        "iii",
+        "ii",
+        "ijj",
         "i,j,klm,nop",
         "ij,jk",
         "ij,ja",
@@ -109,14 +131,21 @@ fn main() {
         "i,",
         "->",
         "i,,,j->k",
+
+        // Legal parse but illegal outputs
+        "i,j,k,l,m->p",
+        "i,j->ijj",
     ]
     .iter()
     {
         println!("Input string: {}", test_string);
         match einsum::parse_einsum_string(test_string) {
-            Some(e) => {
-                println!("{:?}", e);
-                einsum::generate_contraction(&e);
+            Some(p) => {
+                println!("{:?}", p);
+                match einsum::generate_contraction(&p) {
+                    Ok(c) => println!("{:?}", c),
+                    Err(e) => println!("{:?}", e),
+                };
             }
             _ => println!("Invalid string"),
         };
