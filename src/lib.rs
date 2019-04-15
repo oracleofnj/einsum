@@ -2,10 +2,11 @@
 
 use lazy_static::lazy_static;
 use regex::Regex;
+use std::collections::HashMap;
 
 use serde::Serialize;
 use serde_json::Result as SerdeResult;
-use std::collections::HashMap;
+use wasm_bindgen::prelude::*;
 
 #[derive(Debug)]
 pub struct EinsumParse {
@@ -118,6 +119,7 @@ fn _validate(input_string: &str) -> Result<Contraction, &'static str> {
     generate_contraction(&p)
 }
 
+#[wasm_bindgen]
 pub fn validate(input_string: &str) -> ContractionResult {
     ContractionResult(_validate(&input_string))
 }
