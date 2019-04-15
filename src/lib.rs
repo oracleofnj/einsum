@@ -119,7 +119,11 @@ fn _validate(input_string: &str) -> Result<Contraction, &'static str> {
     generate_contraction(&p)
 }
 
-#[wasm_bindgen]
 pub fn validate(input_string: &str) -> ContractionResult {
     ContractionResult(_validate(&input_string))
+}
+
+#[wasm_bindgen(js_name = validateAsJson)]
+pub fn validate_as_json(input_string: &str) -> String {
+    validate(&input_string).to_json().unwrap()
 }
