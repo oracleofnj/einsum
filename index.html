@@ -27,6 +27,16 @@
         // modes
         await init("./pkg/einsum_bg.wasm");
 
+        const main = document.getElementById("main");
+        const input = document.createElement("input", { type: "text" });
+        const output = document.createElement("div");
+        main.appendChild(input);
+        main.appendChild(output);
+        input.addEventListener("input", evt => {
+          const result = validateAsJson(evt.target.value);
+          output.innerHTML = result;
+        });
+
         // And afterwards we can use all the functionality defined in wasm.
         const result = validateAsJson("ij,jk->ik");
         console.log(result);
@@ -35,5 +45,6 @@
 
       run();
     </script>
+    <div id="main"></div>
   </body>
 </html>
