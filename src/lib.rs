@@ -3,8 +3,9 @@
 use lazy_static::lazy_static;
 use regex::Regex;
 use std::collections::HashMap;
+use std::str::FromStr;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Result as SerdeResult;
 use wasm_bindgen::prelude::*;
 
@@ -24,12 +25,22 @@ pub struct Contraction {
     summation_indices: Vec<char>,
 }
 
-#[derive(Debug, Serialize)]
-pub struct ContractionResult(Result<Contraction, &'static str>);
+pub type OutputSize = Vec<usize>;
 
-impl ContractionResult {
-    pub fn to_json(&self) -> SerdeResult<String> {
-        serde_json::to_string(&self)
+#[derive(Debug, Serialize)]
+pub struct SizedContraction {
+    contraction: Contraction,
+    output_size: OutputSize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OperandSizes(Vec<Vec<usize>>);
+
+impl FromStr for OperandSizes {
+    type Err = serde_json::error::Error;
+
+    fn from_str(s: &str) -> Result<OperandSizes, Self::Err> {
+        serde_json::from_str(s)
     }
 }
 
@@ -144,21 +155,18 @@ where
     }
 }
 
-pub fn get_output_size<A>(
+pub fn get_output_size_from_shapes(
     contraction: &Contraction,
-    operands: &[&dyn ArrayLike<A>],
+    operand_shapes: &Vec<Vec<usize>>,
 ) -> Result<Vec<usize>, &'static str> {
     // Check that len(operand_indices) == len(operands)
-    if contraction.operand_indices.len() != operands.len() {
+    if contraction.operand_indices.len() != operand_shapes.len() {
         return Err("number of operands in contraction does not match number of operands supplied");
     }
 
     let mut index_lengths = HashMap::new();
 
-    for (indices, &operand) in contraction.operand_indices.iter().zip(operands) {
-        let operand_view = operand.into_dyn_view();
-        let operand_shape = operand_view.shape();
-
+    for (indices, operand_shape) in contraction.operand_indices.iter().zip(operand_shapes) {
         // Check that len(operand_indices[i]) == len(operands[i].shape())
         if indices.chars().count() != operand_shape.len() {
             return Err(
@@ -185,10 +193,89 @@ pub fn get_output_size<A>(
     Ok(result)
 }
 
+pub fn get_operand_shapes<A>(operands: &[&dyn ArrayLike<A>]) -> Vec<Vec<usize>> {
+    operands
+        .iter()
+        .map(|operand| Vec::from(operand.into_dyn_view().shape()))
+        .collect()
+}
+
+pub fn get_output_size<A>(
+    contraction: &Contraction,
+    operands: &[&dyn ArrayLike<A>],
+) -> Result<Vec<usize>, &'static str> {
+    get_output_size_from_shapes(contraction, &get_operand_shapes(operands))
+}
+
+pub fn validate_and_size_from_shapes(
+    input_string: &str,
+    operand_shapes: &Vec<Vec<usize>>,
+) -> Result<SizedContraction, &'static str> {
+    let contraction = validate(input_string)?;
+    let output_size = get_output_size_from_shapes(&contraction, operand_shapes)?;
+
+    Ok(SizedContraction {
+        contraction,
+        output_size,
+    })
+}
+
+pub fn validate_and_size_from_shapes_as_string(
+    input_string: &str,
+    operand_shapes_as_str: &str,
+) -> Result<SizedContraction, &'static str> {
+    match operand_shapes_as_str.parse::<OperandSizes>() {
+        Err(_) => Err("Error parsing operand shapes into Vec<Vec<usize>>"),
+        Ok(OperandSizes(operand_shapes)) => {
+            validate_and_size_from_shapes(input_string, &operand_shapes)
+        }
+    }
+}
+
+pub fn validate_and_size<A>(
+    input_string: &str,
+    operands: &[&dyn ArrayLike<A>],
+) -> Result<SizedContraction, &'static str> {
+    validate_and_size_from_shapes(input_string, &get_operand_shapes(operands))
+}
+
+#[derive(Debug, Serialize)]
+pub struct ContractionResult(Result<Contraction, &'static str>);
+
+impl ContractionResult {
+    pub fn to_json(&self) -> SerdeResult<String> {
+        serde_json::to_string(&self)
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct SizedContractionResult(Result<SizedContraction, &'static str>);
+
+impl SizedContractionResult {
+    pub fn to_json(&self) -> SerdeResult<String> {
+        serde_json::to_string(&self)
+    }
+}
 
 #[wasm_bindgen(js_name = validateAsJson)]
 pub fn validate_as_json(input_string: &str) -> String {
-    match ContractionResult(validate(&input_string)).to_json() {
+    match ContractionResult(validate(input_string)).to_json() {
+        Ok(s) => s,
+        _ => String::from("{\"Err\": \"Serialization Error\"}"),
+    }
+}
+
+#[wasm_bindgen(js_name = validateAndSizeFromShapesAsStringAsJson)]
+pub fn validate_and_size_from_shapes_as_string_as_json(
+    input_string: &str,
+    operand_shapes: &str,
+) -> String {
+    match SizedContractionResult(validate_and_size_from_shapes_as_string(
+        input_string,
+        operand_shapes,
+    ))
+    .to_json()
+    {
         Ok(s) => s,
         _ => String::from("{\"Err\": \"Serialization Error\"}"),
     }

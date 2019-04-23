@@ -50,13 +50,39 @@ fn main() {
     let p = vec![4, 5];
     let b = Array::<u8, _>::zeros(p);
 
-    let c = einsum::validate("cij,jk->cik").unwrap();
-    println!("{:?}", einsum::get_output_size(&c, &[&a, &b]));
-
-    let c = einsum::validate("ii->i").unwrap();
-    println!("{:?}", einsum::get_output_size(&c, &[&b]));
+    println!("{:?}", einsum::validate_and_size("cij,jk->cik", &[&a, &b]));
+    println!("{:?}", einsum::validate_and_size("ii->i", &[&b]));
 
     let b = arr2(&[[4., 5.], [2., 2.]]);
-    println!("{:?}", einsum::get_output_size(&c, &[&b]));
+    println!("{:?}", einsum::validate_and_size("ii->i", &[&b]));
 
+    println!("");
+
+    println!(
+        "{:?}",
+        einsum::validate_and_size_from_shapes_as_string("cij,jk->cik", "[[10,3,4],[4,5]]")
+    );
+    println!(
+        "{:?}",
+        einsum::validate_and_size_from_shapes_as_string("ii->i", "[[4,5]]")
+    );
+    println!(
+        "{:?}",
+        einsum::validate_and_size_from_shapes_as_string("ii->i", "[[2,2]]")
+    );
+
+    println!("");
+
+    println!(
+        "{:?}",
+        einsum::validate_and_size_from_shapes_as_string_as_json("cij,jk->cik", "[[10,3,4],[4,5]]")
+    );
+    println!(
+        "{:?}",
+        einsum::validate_and_size_from_shapes_as_string_as_json("ii->i", "[[4,5]]")
+    );
+    println!(
+        "{:?}",
+        einsum::validate_and_size_from_shapes_as_string_as_json("ii->i", "[[2,2]]")
+    );
 }
