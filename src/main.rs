@@ -1,5 +1,7 @@
-fn main() {
-    for test_string in [
+use ndarray::prelude::*;
+
+fn test_parses() {
+    for test_string in &vec![
         // Explicit
         "i->",
         "ij->",
@@ -32,11 +34,24 @@ fn main() {
         // Legal parse but illegal outputs
         "i,j,k,l,m->p",
         "i,j->ijj",
-    ]
-    .iter()
-    {
+    ] {
         println!("Input string: {}", test_string);
-        println!("{}", einsum::validate(test_string).to_json().unwrap());
+        println!("{}", einsum::validate_as_json(test_string));
         println!("");
     }
+}
+
+fn main() {
+    test_parses();
+
+    let r = vec![10, 3, 4];
+    let a = Array::<u8, _>::zeros(r);
+
+    let p = vec![4, 5];
+    let b = Array::<u8, _>::zeros(p);
+
+    let c = einsum::validate("cij,jk->cik").unwrap();
+    let d = einsum::get_output_size(&c, &[&a, &b]);
+
+    println!("{:?}", d);
 }
