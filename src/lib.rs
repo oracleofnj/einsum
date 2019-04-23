@@ -179,8 +179,7 @@ pub fn get_output_size<A>(
     let result: Vec<_> = contraction
         .output_indices
         .iter()
-        // unwrap() is safe here because this was checked while making the contraction
-        .map(|c| *(index_lengths.get(c).unwrap()))
+        .map(|c| index_lengths[c])
         .collect();
 
     Ok(result)

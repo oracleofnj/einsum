@@ -56,7 +56,7 @@ fn main() {
     let c = einsum::validate("ii->i").unwrap();
     println!("{:?}", einsum::get_output_size(&c, &[&b]));
 
-    let b = arr2(&[[4, 5], [2, 2]]);
+    let b = arr2(&[[4., 5.], [2., 2.]]);
     println!("{:?}", einsum::get_output_size(&c, &[&b]));
 
 }
