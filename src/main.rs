@@ -51,7 +51,12 @@ fn main() {
     let b = Array::<u8, _>::zeros(p);
 
     let c = einsum::validate("cij,jk->cik").unwrap();
-    let d = einsum::get_output_size(&c, &[&a, &b]);
+    println!("{:?}", einsum::get_output_size(&c, &[&a, &b]));
 
-    println!("{:?}", d);
+    let c = einsum::validate("ii->i").unwrap();
+    println!("{:?}", einsum::get_output_size(&c, &[&b]));
+
+    let b = arr2(&[[4, 5], [2, 2]]);
+    println!("{:?}", einsum::get_output_size(&c, &[&b]));
+
 }

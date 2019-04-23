@@ -153,18 +153,14 @@ pub fn get_output_size<A>(
         return Err("number of operands in contraction does not match number of operands supplied");
     }
 
-    let operand_shapes: Vec<_> = operands
-        .iter()
-        .map(|&x| Vec::from(x.into_dyn_view().shape()))
-        .collect();
     let mut index_lengths = HashMap::new();
 
-    for (indices, operand) in contraction.operand_indices.iter().zip(&operand_shapes) {
-        let indices_len = indices.chars().count();
-        let operand_ndim = operand.len();
+    for (indices, &operand) in contraction.operand_indices.iter().zip(operands) {
+        let operand_view = operand.into_dyn_view();
+        let operand_shape = operand_view.shape();
 
         // Check that len(operand_indices[i]) == len(operands[i].shape())
-        if indices_len != operand_ndim {
+        if indices.chars().count() != operand_shape.len() {
             return Err(
                 "number of indices in one or more operands does not match dimensions of operand",
             );
@@ -172,7 +168,7 @@ pub fn get_output_size<A>(
 
         // Check that whenever there are multiple copies of an index,
         // operands[i].shape()[m] == operands[j].shape()[n]
-        for (c, &n) in indices.chars().zip(operand) {
+        for (c, &n) in indices.chars().zip(operand_shape) {
             let existing_n = index_lengths.entry(c).or_insert(n);
             if *existing_n != n {
                 return Err("repeated index with different size");
@@ -183,7 +179,7 @@ pub fn get_output_size<A>(
     let result: Vec<_> = contraction
         .output_indices
         .iter()
-        // unwrap() is safe here because this was checked before making the contraction
+        // unwrap() is safe here because this was checked while making the contraction
         .map(|c| *(index_lengths.get(c).unwrap()))
         .collect();
 
