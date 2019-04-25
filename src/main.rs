@@ -93,6 +93,14 @@ fn main() {
         [100, 110, 120, 130, 140],
         [150, 160, 170, 180, 190],
     ]);
-    let sc = einsum::validate_and_size("ij,jk->ik", &[&a, &b]).unwrap();
-    println!("{:?}", einsum::my_einsum(&sc, &[&a, &b]));
+    println!("{:?}\n", einsum::slow_einsum("ij,jk->ik", &[&a, &b]));
+
+    let c = arr2(&[[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11], [12, 13, 14, 15]]);
+    println!("{:?}\n", einsum::slow_einsum("ii->i", &[&c]));
+
+    println!("{:?}\n", einsum::slow_einsum("ii->", &[&c]));
+
+    println!("{:?}\n", einsum::slow_einsum("ii", &[&c]));
+
+    println!("{:?}\n", einsum::slow_einsum("ji", &[&c]));
 }

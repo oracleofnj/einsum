@@ -392,10 +392,10 @@ where
     }
 }
 
-pub fn my_einsum<A>(
-    sized_contraction: &SizedContraction,
+pub fn slow_einsum<A>(
+    input_string: &str,
     operands: &[&dyn ArrayLike<A>],
-) -> ArrayD<A>
+) -> Result<ArrayD<A>, &'static str>
 where
     A: Clone
         + std::ops::Add<Output = A>
@@ -418,18 +418,19 @@ where
     //         summation_indices=contraction["summation_indices"]
     //     )
     //////////////////////////////////
+    let sized_contraction = validate_and_size(input_string, operands)?;
     let dyn_operands: Vec<ArrayViewD<A>> = operands.iter().map(|x| x.into_dyn_view()).collect();
     let operand_refs: Vec<&ArrayViewD<A>> = dyn_operands.iter().map(|x| x).collect();
     let bound_indices: HashMap<char, usize> = HashMap::new();
 
-    partial_einsum_outer_loop(
+    Ok(partial_einsum_outer_loop(
         &operand_refs,
         &sized_contraction.contraction.operand_indices,
         &bound_indices,
         &sized_contraction.contraction.output_indices,
         &sized_contraction.output_size,
         &sized_contraction.contraction.summation_indices,
-    )
+    ))
 }
 
 ////////////////////////// WASM stuff below here ///////////////////////
