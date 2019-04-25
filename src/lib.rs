@@ -25,7 +25,7 @@ pub struct Contraction {
     summation_indices: Vec<char>,
 }
 
-pub type OutputSize = Vec<usize>;
+pub type OutputSize = HashMap<char, usize>;
 
 #[derive(Debug, Serialize)]
 pub struct SizedContraction {
@@ -158,13 +158,13 @@ where
 pub fn get_output_size_from_shapes(
     contraction: &Contraction,
     operand_shapes: &Vec<Vec<usize>>,
-) -> Result<Vec<usize>, &'static str> {
+) -> Result<OutputSize, &'static str> {
     // Check that len(operand_indices) == len(operands)
     if contraction.operand_indices.len() != operand_shapes.len() {
         return Err("number of operands in contraction does not match number of operands supplied");
     }
 
-    let mut index_lengths = HashMap::new();
+    let mut index_lengths: OutputSize = HashMap::new();
 
     for (indices, operand_shape) in contraction.operand_indices.iter().zip(operand_shapes) {
         // Check that len(operand_indices[i]) == len(operands[i].shape())
@@ -184,13 +184,7 @@ pub fn get_output_size_from_shapes(
         }
     }
 
-    let result: Vec<_> = contraction
-        .output_indices
-        .iter()
-        .map(|c| index_lengths[c])
-        .collect();
-
-    Ok(result)
+    Ok(index_lengths)
 }
 
 pub fn get_operand_shapes<A>(operands: &[&dyn ArrayLike<A>]) -> Vec<Vec<usize>> {
@@ -203,7 +197,7 @@ pub fn get_operand_shapes<A>(operands: &[&dyn ArrayLike<A>]) -> Vec<Vec<usize>> 
 pub fn get_output_size<A>(
     contraction: &Contraction,
     operands: &[&dyn ArrayLike<A>],
-) -> Result<Vec<usize>, &'static str> {
+) -> Result<HashMap<char, usize>, &'static str> {
     get_output_size_from_shapes(contraction, &get_operand_shapes(operands))
 }
 
