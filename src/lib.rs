@@ -10,7 +10,7 @@ use serde_json::Result as SerdeResult;
 use wasm_bindgen::prelude::*;
 
 use ndarray::prelude::*;
-use ndarray::Data;
+use ndarray::{Data, IxDyn};
 
 #[derive(Debug)]
 pub struct EinsumParse {
@@ -233,6 +233,206 @@ pub fn validate_and_size<A>(
     validate_and_size_from_shapes(input_string, &get_operand_shapes(operands))
 }
 
+fn make_index(indices: &str, bindings: &HashMap<char, usize>) -> IxDyn {
+    ////// PYTHON: ///////////////////
+    // def make_tuple(
+    //     indices,
+    //     bindings,
+    // ):
+    //     return tuple([bindings[x] for x in indices])
+    //////////////////////////////////
+    let mut v: Vec<usize> = Vec::new();
+    for i in indices.chars() {
+        v.push(bindings[&i])
+    }
+    IxDyn(&v)
+}
+
+fn partial_einsum_inner_loop<A>(
+    operands: &[&ArrayViewD<A>],
+    operand_indices: &Vec<String>,
+    bound_indices: &HashMap<char, usize>,
+    axis_lengths: &HashMap<char, usize>,
+    free_summation_indices: &[char],
+) -> A
+where
+    A: Clone
+        + std::ops::Add<Output = A>
+        + num_traits::identities::Zero
+        + std::ops::Mul<Output = A>
+        + num_traits::identities::One,
+{
+    ////// PYTHON: ///////////////////
+    // def partial_einsum_inner_loop(...):
+    //     if len(free_summation_indices) == 0:
+    //         return np.product([
+    //             operand[make_tuple(indices, bound_indices)]
+    //             for (operand, indices) in zip(operands, operand_indices)
+    //         ])
+    //     else:
+    //         next_index = free_summation_indices[0]
+    //         remaining_indices = free_summation_indices[1:]
+    //         partial_sum = 0
+    //         for i in range(axis_lengths[next_index]):
+    //             partial_sum += partial_einsum_inner_loop(
+    //                 operands=operands,
+    //                 operand_indices=operand_indices,
+    //                 bound_indices={**bound_indices, **{next_index: i}},
+    //                 axis_lengths=axis_lengths,
+    //                 free_summation_indices=remaining_indices
+    //             )
+    //         return partial_sum
+    //////////////////////////////////
+    if free_summation_indices.len() == 0 {
+        let mut p = num_traits::identities::one::<A>();
+        for (operand, indices) in operands.iter().zip(operand_indices) {
+            let index = make_index(&indices, bound_indices);
+            p = p * (&operand[index]).clone();
+        }
+        p
+    } else {
+        let next_index = free_summation_indices[0];
+        let remaining_indices = &free_summation_indices[1..];
+        let mut s = num_traits::identities::zero::<A>();
+        for i in 0..axis_lengths[&next_index] {
+            let mut new_bound_indices = bound_indices.clone();
+            new_bound_indices.insert(next_index, i);
+
+            s = s + partial_einsum_inner_loop(
+                operands,
+                operand_indices,
+                &new_bound_indices,
+                axis_lengths,
+                remaining_indices,
+            )
+        }
+        s
+    }
+}
+
+pub fn partial_einsum_outer_loop<A>(
+    operands: &[&ArrayViewD<A>],
+    operand_indices: &Vec<String>,
+    bound_indices: &HashMap<char, usize>,
+    free_output_indices: &[char],
+    axis_lengths: &HashMap<char, usize>,
+    summation_indices: &[char],
+) -> ArrayD<A>
+where
+    A: Clone
+        + std::ops::Add<Output = A>
+        + num_traits::identities::Zero
+        + std::ops::Mul<Output = A>
+        + num_traits::identities::One,
+{
+    ////// PYTHON: ///////////////////
+    // def partial_einsum_outer_loop(...):
+    //     if len(free_output_indices) == 0:
+    //         return partial_einsum_inner_loop(
+    //             operands=operands,
+    //             operand_indices=operand_indices,
+    //             bound_indices=bound_indices,
+    //             axis_lengths=axis_lengths,
+    //             free_summation_indices=summation_indices
+    //         )
+    //     else:
+    //         next_index = free_output_indices[0]
+    //         remaining_indices = free_output_indices[1:]
+    //         return np.array([
+    //             partial_einsum_outer_loop(
+    //                 operands=operands,
+    //                 operand_indices=operand_indices,
+    //                 bound_indices={**bound_indices, **{next_index: i}},
+    //                 free_output_indices=remaining_indices,
+    //                 axis_lengths=axis_lengths,
+    //                 summation_indices=summation_indices
+    //             )
+    //             for i in range(axis_lengths[next_index])
+    //         ])
+    //////////////////////////////////
+    if free_output_indices.len() == 0 {
+        arr0(partial_einsum_inner_loop(
+            operands,
+            operand_indices,
+            bound_indices,
+            axis_lengths,
+            summation_indices,
+        ))
+        .into_dyn()
+    } else {
+        let output_shapes: Vec<_> = free_output_indices
+            .iter()
+            .map(|c| axis_lengths[c])
+            .collect();
+        let output_shape = IxDyn(&output_shapes);
+        let mut result: ArrayD<A> = Array::zeros(output_shape);
+        let next_index = free_output_indices[0];
+        let remaining_indices = &free_output_indices[1..];
+
+        for i in 0..axis_lengths[&next_index] {
+            let mut new_bound_indices = bound_indices.clone();
+            new_bound_indices.insert(next_index, i);
+            let slice = partial_einsum_outer_loop(
+                operands,
+                operand_indices,
+                &new_bound_indices,
+                remaining_indices,
+                axis_lengths,
+                summation_indices,
+            );
+            let mut mutable_subslice = result.index_axis_mut(Axis(0), i);
+            ndarray::Zip::from(&mut mutable_subslice)
+                .and(&slice)
+                .apply(|m, s| {
+                    *m = s.clone();
+                });
+        }
+
+        result
+    }
+}
+
+pub fn my_einsum<A>(
+    sized_contraction: &SizedContraction,
+    operands: &[&dyn ArrayLike<A>],
+) -> ArrayD<A>
+where
+    A: Clone
+        + std::ops::Add<Output = A>
+        + num_traits::identities::Zero
+        + std::ops::Mul<Output = A>
+        + num_traits::identities::One,
+{
+    ////// PYTHON: ///////////////////
+    // def my_einsum(
+    //     contraction,
+    //     operands,
+    //     axis_lengths,
+    // ):
+    //     return partial_einsum_outer_loop(
+    //         operands=operands,
+    //         operand_indices=contraction["operand_indices"],
+    //         bound_indices={},
+    //         free_output_indices=contraction["output_indices"],
+    //         axis_lengths=axis_lengths,
+    //         summation_indices=contraction["summation_indices"]
+    //     )
+    //////////////////////////////////
+    let dyn_operands: Vec<ArrayViewD<A>> = operands.iter().map(|x| x.into_dyn_view()).collect();
+    let operand_refs: Vec<&ArrayViewD<A>> = dyn_operands.iter().map(|x| x).collect();
+    let bound_indices: HashMap<char, usize> = HashMap::new();
+
+    partial_einsum_outer_loop(
+        &operand_refs,
+        &sized_contraction.contraction.operand_indices,
+        &bound_indices,
+        &sized_contraction.contraction.output_indices,
+        &sized_contraction.output_size,
+        &sized_contraction.contraction.summation_indices,
+    )
+}
+
+////////////////////////// WASM stuff below here ///////////////////////
 #[derive(Debug, Serialize)]
 pub struct ContractionResult(Result<Contraction, &'static str>);
 
