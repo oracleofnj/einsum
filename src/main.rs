@@ -105,4 +105,20 @@ fn main() {
     println!("{:?}\n", einsum::slow_einsum("ji", &[&c]));
 
     println!("{:?}\n", einsum::slow_einsum("ji->", &[&c]));
+
+    println!(
+        "{:?}\n",
+        // einsum::slow_einsum_with_flattened_operands_as_string::<f64>(
+        einsum::slow_einsum_with_flattened_operands_as_flattened_json_string(
+            "ij",
+            r##"
+            [
+                {
+                    "contents": [0, 1, 2, 3],
+                    "shape": [2, 2]
+                }
+            ]
+            "##
+        )
+    )
 }
