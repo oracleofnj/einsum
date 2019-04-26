@@ -103,4 +103,6 @@ fn main() {
     println!("{:?}\n", einsum::slow_einsum("ii", &[&c]));
 
     println!("{:?}\n", einsum::slow_einsum("ji", &[&c]));
+
+    println!("{:?}\n", einsum::slow_einsum("ji->", &[&c]));
 }

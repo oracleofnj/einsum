@@ -3,10 +3,8 @@
 use lazy_static::lazy_static;
 use regex::Regex;
 use std::collections::HashMap;
-use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Result as SerdeResult;
 use wasm_bindgen::prelude::*;
 
 use ndarray::prelude::*;
@@ -36,12 +34,10 @@ pub struct SizedContraction {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct OperandSizes(Vec<Vec<usize>>);
 
-impl FromStr for OperandSizes {
-    type Err = serde_json::error::Error;
-
-    fn from_str(s: &str) -> Result<OperandSizes, Self::Err> {
-        serde_json::from_str(s)
-    }
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FlattenedOperand<T> {
+    shape: Vec<usize>,
+    contents: Vec<T>,
 }
 
 pub fn generate_contraction(parse: &EinsumParse) -> Result<Contraction, &'static str> {
@@ -218,7 +214,7 @@ pub fn validate_and_size_from_shapes_as_string(
     input_string: &str,
     operand_shapes_as_str: &str,
 ) -> Result<SizedContraction, &'static str> {
-    match operand_shapes_as_str.parse::<OperandSizes>() {
+    match serde_json::from_str::<OperandSizes>(&operand_shapes_as_str) {
         Err(_) => Err("Error parsing operand shapes into Vec<Vec<usize>>"),
         Ok(OperandSizes(operand_shapes)) => {
             validate_and_size_from_shapes(input_string, &operand_shapes)
@@ -248,20 +244,30 @@ fn make_index(indices: &str, bindings: &HashMap<char, usize>) -> IxDyn {
     IxDyn(&v)
 }
 
-fn partial_einsum_inner_loop<A>(
+pub trait Einsummable:
+    Copy
+    + std::ops::Add<Output = Self>
+    + num_traits::identities::Zero
+    + std::ops::Mul<Output = Self>
+    + num_traits::identities::One
+{
+}
+impl<A> Einsummable for A where
+    A: Copy
+        + std::ops::Add<Output = A>
+        + num_traits::identities::Zero
+        + std::ops::Mul<Output = A>
+        + num_traits::identities::One
+{
+}
+
+fn partial_einsum_inner_loop<A: Einsummable>(
     operands: &[&ArrayViewD<A>],
     operand_indices: &Vec<String>,
     bound_indices: &HashMap<char, usize>,
     axis_lengths: &HashMap<char, usize>,
     free_summation_indices: &[char],
-) -> A
-where
-    A: Clone
-        + std::ops::Add<Output = A>
-        + num_traits::identities::Zero
-        + std::ops::Mul<Output = A>
-        + num_traits::identities::One,
-{
+) -> A {
     ////// PYTHON: ///////////////////
     // def partial_einsum_inner_loop(...):
     //     if len(free_summation_indices) == 0:
@@ -287,7 +293,7 @@ where
         let mut p = num_traits::identities::one::<A>();
         for (operand, indices) in operands.iter().zip(operand_indices) {
             let index = make_index(&indices, bound_indices);
-            p = p * (&operand[index]).clone();
+            p = p * operand[index];
         }
         p
     } else {
@@ -310,21 +316,14 @@ where
     }
 }
 
-pub fn partial_einsum_outer_loop<A>(
+pub fn partial_einsum_outer_loop<A: Einsummable>(
     operands: &[&ArrayViewD<A>],
     operand_indices: &Vec<String>,
     bound_indices: &HashMap<char, usize>,
     free_output_indices: &[char],
     axis_lengths: &HashMap<char, usize>,
     summation_indices: &[char],
-) -> ArrayD<A>
-where
-    A: Clone
-        + std::ops::Add<Output = A>
-        + num_traits::identities::Zero
-        + std::ops::Mul<Output = A>
-        + num_traits::identities::One,
-{
+) -> ArrayD<A> {
     ////// PYTHON: ///////////////////
     // def partial_einsum_outer_loop(...):
     //     if len(free_output_indices) == 0:
@@ -384,7 +383,7 @@ where
             ndarray::Zip::from(&mut mutable_subslice)
                 .and(&slice)
                 .apply(|m, s| {
-                    *m = s.clone();
+                    *m = *s;
                 });
         }
 
@@ -392,17 +391,10 @@ where
     }
 }
 
-pub fn slow_einsum<A>(
-    input_string: &str,
+pub fn slow_einsum_given_sized_contraction<A: Einsummable>(
+    sized_contraction: &SizedContraction,
     operands: &[&dyn ArrayLike<A>],
-) -> Result<ArrayD<A>, &'static str>
-where
-    A: Clone
-        + std::ops::Add<Output = A>
-        + num_traits::identities::Zero
-        + std::ops::Mul<Output = A>
-        + num_traits::identities::One,
-{
+) -> ArrayD<A> {
     ////// PYTHON: ///////////////////
     // def my_einsum(
     //     contraction,
@@ -418,59 +410,66 @@ where
     //         summation_indices=contraction["summation_indices"]
     //     )
     //////////////////////////////////
-    let sized_contraction = validate_and_size(input_string, operands)?;
     let dyn_operands: Vec<ArrayViewD<A>> = operands.iter().map(|x| x.into_dyn_view()).collect();
     let operand_refs: Vec<&ArrayViewD<A>> = dyn_operands.iter().map(|x| x).collect();
     let bound_indices: HashMap<char, usize> = HashMap::new();
 
-    Ok(partial_einsum_outer_loop(
+    partial_einsum_outer_loop(
         &operand_refs,
         &sized_contraction.contraction.operand_indices,
         &bound_indices,
         &sized_contraction.contraction.output_indices,
         &sized_contraction.output_size,
         &sized_contraction.contraction.summation_indices,
+    )
+}
+
+pub fn slow_einsum<A: Einsummable>(
+    input_string: &str,
+    operands: &[&dyn ArrayLike<A>],
+) -> Result<ArrayD<A>, &'static str> {
+    let sized_contraction = validate_and_size(input_string, operands)?;
+    Ok(slow_einsum_given_sized_contraction(
+        &sized_contraction,
+        operands,
     ))
 }
+
+// pub fn slow_einsum_with_flattened_operands<A>(
+//     input_string: &str,
+//     flattened_operands: &[&FlattenedOperand<A>],
+// ) -> Result<ArrayD<A>, &'static str>
+// {
+//     let sized_contraction = validate_and_size(input_string, operands)?;
+//     Ok(slow_einsum_given_sized_contraction(
+//         &sized_contraction,
+//         operands,
+//     ))
+// }
 
 ////////////////////////// WASM stuff below here ///////////////////////
 #[derive(Debug, Serialize)]
 pub struct ContractionResult(Result<Contraction, &'static str>);
 
-impl ContractionResult {
-    pub fn to_json(&self) -> SerdeResult<String> {
-        serde_json::to_string(&self)
+#[wasm_bindgen(js_name = validateAsJson)]
+pub fn validate_as_json(input_string: &str) -> String {
+    match serde_json::to_string(&ContractionResult(validate(input_string))) {
+        Ok(s) => s,
+        _ => String::from("{\"Err\": \"Serialization Error\"}"),
     }
 }
 
 #[derive(Debug, Serialize)]
 pub struct SizedContractionResult(Result<SizedContraction, &'static str>);
 
-impl SizedContractionResult {
-    pub fn to_json(&self) -> SerdeResult<String> {
-        serde_json::to_string(&self)
-    }
-}
-
-#[wasm_bindgen(js_name = validateAsJson)]
-pub fn validate_as_json(input_string: &str) -> String {
-    match ContractionResult(validate(input_string)).to_json() {
-        Ok(s) => s,
-        _ => String::from("{\"Err\": \"Serialization Error\"}"),
-    }
-}
-
 #[wasm_bindgen(js_name = validateAndSizeFromShapesAsStringAsJson)]
 pub fn validate_and_size_from_shapes_as_string_as_json(
     input_string: &str,
     operand_shapes: &str,
 ) -> String {
-    match SizedContractionResult(validate_and_size_from_shapes_as_string(
-        input_string,
-        operand_shapes,
-    ))
-    .to_json()
-    {
+    match serde_json::to_string(&SizedContractionResult(
+        validate_and_size_from_shapes_as_string(input_string, operand_shapes),
+    )) {
         Ok(s) => s,
         _ => String::from("{\"Err\": \"Serialization Error\"}"),
     }
