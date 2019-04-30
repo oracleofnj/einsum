@@ -31,19 +31,38 @@ pub struct SizedContraction {
     output_size: OutputSize,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct OperandSizes(Vec<Vec<usize>>);
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct FlattenedOperand<T> {
-    pub shape: Vec<usize>,
-    pub contents: Vec<T>,
+pub trait Einsummable:
+    Copy
+    + std::ops::Add<Output = Self>
+    + num_traits::identities::Zero
+    + std::ops::Mul<Output = Self>
+    + num_traits::identities::One
+{
+}
+impl<A> Einsummable for A where
+    A: Copy
+        + std::ops::Add<Output = A>
+        + num_traits::identities::Zero
+        + std::ops::Mul<Output = A>
+        + num_traits::identities::One
+{
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct FlattenedOperandList<T>(pub Vec<FlattenedOperand<T>>);
+pub trait ArrayLike<A> {
+    fn into_dyn_view(&self) -> ArrayView<A, IxDyn>;
+}
 
-pub fn generate_contraction(parse: &EinsumParse) -> Result<Contraction, &'static str> {
+impl<A, S, D> ArrayLike<A> for ArrayBase<S, D>
+where
+    S: Data<Elem = A>,
+    D: Dimension,
+{
+    fn into_dyn_view(&self) -> ArrayView<A, IxDyn> {
+        self.view().into_dyn()
+    }
+}
+
+fn generate_contraction(parse: &EinsumParse) -> Result<Contraction, &'static str> {
     let mut input_indices = HashMap::new();
     for c in parse.operand_indices.iter().flat_map(|s| s.chars()) {
         *input_indices.entry(c).or_insert(0) += 1;
@@ -100,25 +119,17 @@ pub fn generate_contraction(parse: &EinsumParse) -> Result<Contraction, &'static
     })
 }
 
-pub fn parse_einsum_string(input_string: &str) -> Option<EinsumParse> {
+fn parse_einsum_string(input_string: &str) -> Option<EinsumParse> {
     lazy_static! {
         // Unwhitespaced version:
         // ^([a-z]+)((?:,[a-z]+)*)(?:->([a-z]*))?$
-
-        // Avoiding unwrap() here in a fruitless attempt to shrink
-        // generated wasm size
-        static ref RE: Regex = {
-            match Regex::new(r"(?x)
+        static ref RE: Regex = Regex::new(r"(?x)
             ^
             (?P<first_operand>[a-z]+)
             (?P<more_operands>(?:,[a-z]+)*)
             (?:->(?P<output>[a-z]*))?
             $
-            ") {
-                Ok(r) => r,
-                _ => std::process::abort()
-            }
-        };
+            ").unwrap();
     }
     let captures = RE.captures(input_string)?;
     let mut operand_indices = Vec::new();
@@ -140,21 +151,7 @@ pub fn validate(input_string: &str) -> Result<Contraction, &'static str> {
     generate_contraction(&p)
 }
 
-pub trait ArrayLike<A> {
-    fn into_dyn_view(&self) -> ArrayView<A, IxDyn>;
-}
-
-impl<A, S, D> ArrayLike<A> for ArrayBase<S, D>
-where
-    S: Data<Elem = A>,
-    D: Dimension,
-{
-    fn into_dyn_view(&self) -> ArrayView<A, IxDyn> {
-        self.view().into_dyn()
-    }
-}
-
-pub fn get_output_size_from_shapes(
+fn get_output_size_from_shapes(
     contraction: &Contraction,
     operand_shapes: &Vec<Vec<usize>>,
 ) -> Result<OutputSize, &'static str> {
@@ -186,7 +183,7 @@ pub fn get_output_size_from_shapes(
     Ok(index_lengths)
 }
 
-pub fn get_operand_shapes<A>(operands: &[&dyn ArrayLike<A>]) -> Vec<Vec<usize>> {
+fn get_operand_shapes<A>(operands: &[&dyn ArrayLike<A>]) -> Vec<Vec<usize>> {
     operands
         .iter()
         .map(|operand| Vec::from(operand.into_dyn_view().shape()))
@@ -200,7 +197,7 @@ pub fn get_output_size<A>(
     get_output_size_from_shapes(contraction, &get_operand_shapes(operands))
 }
 
-pub fn validate_and_size_from_shapes(
+fn validate_and_size_from_shapes(
     input_string: &str,
     operand_shapes: &Vec<Vec<usize>>,
 ) -> Result<SizedContraction, &'static str> {
@@ -211,18 +208,6 @@ pub fn validate_and_size_from_shapes(
         contraction,
         output_size,
     })
-}
-
-pub fn validate_and_size_from_shapes_as_string(
-    input_string: &str,
-    operand_shapes_as_str: &str,
-) -> Result<SizedContraction, &'static str> {
-    match serde_json::from_str::<OperandSizes>(&operand_shapes_as_str) {
-        Err(_) => Err("Error parsing operand shapes into Vec<Vec<usize>>"),
-        Ok(OperandSizes(operand_shapes)) => {
-            validate_and_size_from_shapes(input_string, &operand_shapes)
-        }
-    }
 }
 
 pub fn validate_and_size<A>(
@@ -245,23 +230,6 @@ fn make_index(indices: &str, bindings: &HashMap<char, usize>) -> IxDyn {
         v.push(bindings[&i])
     }
     IxDyn(&v)
-}
-
-pub trait Einsummable:
-    Copy
-    + std::ops::Add<Output = Self>
-    + num_traits::identities::Zero
-    + std::ops::Mul<Output = Self>
-    + num_traits::identities::One
-{
-}
-impl<A> Einsummable for A where
-    A: Copy
-        + std::ops::Add<Output = A>
-        + num_traits::identities::Zero
-        + std::ops::Mul<Output = A>
-        + num_traits::identities::One
-{
 }
 
 fn partial_einsum_inner_loop<A: Einsummable>(
@@ -319,7 +287,7 @@ fn partial_einsum_inner_loop<A: Einsummable>(
     }
 }
 
-pub fn partial_einsum_outer_loop<A: Einsummable>(
+fn partial_einsum_outer_loop<A: Einsummable>(
     operands: &[&ArrayViewD<A>],
     operand_indices: &Vec<String>,
     bound_indices: &HashMap<char, usize>,
@@ -362,35 +330,25 @@ pub fn partial_einsum_outer_loop<A: Einsummable>(
         ))
         .into_dyn()
     } else {
-        let output_shapes: Vec<_> = free_output_indices
-            .iter()
-            .map(|c| axis_lengths[c])
-            .collect();
-        let output_shape = IxDyn(&output_shapes);
-        let mut result: ArrayD<A> = Array::zeros(output_shape);
         let next_index = free_output_indices[0];
         let remaining_indices = &free_output_indices[1..];
-
-        for i in 0..axis_lengths[&next_index] {
-            let mut new_bound_indices = bound_indices.clone();
-            new_bound_indices.insert(next_index, i);
-            let slice = partial_einsum_outer_loop(
-                operands,
-                operand_indices,
-                &new_bound_indices,
-                remaining_indices,
-                axis_lengths,
-                summation_indices,
-            );
-            let mut mutable_subslice = result.index_axis_mut(Axis(0), i);
-            ndarray::Zip::from(&mut mutable_subslice)
-                .and(&slice)
-                .apply(|m, s| {
-                    *m = *s;
-                });
-        }
-
-        result
+        let slices: Vec<_> = (0..axis_lengths[&next_index])
+            .map(|i| {
+                let mut new_bound_indices = bound_indices.clone();
+                new_bound_indices.insert(next_index, i);
+                partial_einsum_outer_loop(
+                    operands,
+                    operand_indices,
+                    &new_bound_indices,
+                    remaining_indices,
+                    axis_lengths,
+                    summation_indices,
+                )
+                .insert_axis(Axis(0))
+            })
+            .collect();
+        let slice_views: Vec<_> = slices.iter().map(|s| s.view()).collect();
+        ndarray::stack(Axis(0), &slice_views).unwrap()
     }
 }
 
@@ -439,6 +397,19 @@ pub fn slow_einsum<A: Einsummable>(
     ))
 }
 
+//////// Versions that accept strings for WASM interop below here ////
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OperandSizes(Vec<Vec<usize>>);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FlattenedOperand<T> {
+    pub shape: Vec<usize>,
+    pub contents: Vec<T>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FlattenedOperandList<T>(pub Vec<FlattenedOperand<T>>);
+
 fn unflatten_operand<A: Einsummable>(
     flattened_operand: &FlattenedOperand<A>,
 ) -> Result<ArrayD<A>, ndarray::ShapeError> {
@@ -451,7 +422,19 @@ fn unflatten_operand<A: Einsummable>(
 fn flatten_operand<A: Einsummable>(unflattened_operand: &ArrayD<A>) -> FlattenedOperand<A> {
     FlattenedOperand {
         shape: Vec::from(unflattened_operand.shape()),
-        contents: unflattened_operand.iter().map(|x| *x).collect::<Vec<A>>()
+        contents: unflattened_operand.iter().map(|x| *x).collect::<Vec<A>>(),
+    }
+}
+
+pub fn validate_and_size_from_shapes_as_string(
+    input_string: &str,
+    operand_shapes_as_str: &str,
+) -> Result<SizedContraction, &'static str> {
+    match serde_json::from_str::<OperandSizes>(&operand_shapes_as_str) {
+        Err(_) => Err("Error parsing operand shapes into Vec<Vec<usize>>"),
+        Ok(OperandSizes(operand_shapes)) => {
+            validate_and_size_from_shapes(input_string, &operand_shapes)
+        }
     }
 }
 
@@ -541,7 +524,10 @@ pub fn slow_einsum_with_flattened_operands_as_json_string_as_json(
     flattened_operands_as_string: &str,
 ) -> String {
     match serde_json::to_string(&EinsumResult(
-        slow_einsum_with_flattened_operands_as_flattened_json_string(input_string, flattened_operands_as_string)
+        slow_einsum_with_flattened_operands_as_flattened_json_string(
+            input_string,
+            flattened_operands_as_string,
+        ),
     )) {
         Ok(s) => s,
         _ => String::from("{\"Err\": \"Serialization Error\"}"),

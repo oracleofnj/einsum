@@ -3,6 +3,7 @@ name = "einsum"
 version = "0.1.0"
 authors = ["oracleofnj <jared.samet@aya.yale.edu>"]
 edition = "2018"
+license = "Apache-2.0"
 
 [dependencies]
 regex = "1"
