@@ -14,6 +14,10 @@ wasm-bindgen = "0.2"
 ndarray = "0.12.1"
 num-traits = "0.2.6"
 
+[dev-dependencies]
+rand="0.6"
+ndarray-rand = "0.9.0"
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 
