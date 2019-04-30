@@ -31,17 +31,33 @@ fn bench_multiply_small(b: &mut Bencher) {
 }
 
 #[bench]
-fn bench_multiply_builtin_medium(b: &mut Bencher) {
-    let m1 = rand_array((300, 400));
-    let m2 = rand_array((400, 500));
+fn bench_multiply_medium(b: &mut Bencher) {
+    let m1 = rand_array((6, 8));
+    let m2 = rand_array((8, 10));
 
-    b.iter(|| m1.dot(&m2));
+    b.iter(|| einsum::slow_einsum("ij,jk->ik", &[&m1, &m2]));
 }
 
 #[bench]
-fn bench_multiply_small_medium(b: &mut Bencher) {
-    let m1 = rand_array((300, 400));
-    let m2 = rand_array((400, 500));
+fn bench_multiply_large(b: &mut Bencher) {
+    let m1 = rand_array((12, 16));
+    let m2 = rand_array((16, 20));
+
+    b.iter(|| einsum::slow_einsum("ij,jk->ik", &[&m1, &m2]));
+}
+
+#[bench]
+fn bench_multiply_xl(b: &mut Bencher) {
+    let m1 = rand_array((24, 32));
+    let m2 = rand_array((32, 40));
+
+    b.iter(|| einsum::slow_einsum("ij,jk->ik", &[&m1, &m2]));
+}
+
+#[bench]
+fn bench_multiply_xxl(b: &mut Bencher) {
+    let m1 = rand_array((48, 64));
+    let m2 = rand_array((64, 80));
 
     b.iter(|| einsum::slow_einsum("ij,jk->ik", &[&m1, &m2]));
 }
