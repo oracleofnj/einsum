@@ -15,7 +15,7 @@
 
 use lazy_static::lazy_static;
 use regex::Regex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
@@ -410,7 +410,7 @@ pub fn slow_einsum<A: LinalgScalar>(
     ))
 }
 
-pub fn tensordot_fixed_order<A, S, S2, D, E>(
+fn tensordot_fixed_order<A, S, S2, D, E>(
     t1: &ArrayBase<S, D>,
     t2: &ArrayBase<S2, E>,
     last_n: usize,
@@ -464,6 +464,96 @@ where
         .dot(&matrix2)
         .into_shape(IxDyn(&output_shape))
         .unwrap()
+}
+
+// Taken directly from https://github.com/rust-ndarray/ndarray/blob/master/examples/rollaxis.rs
+fn roll_axis<A, S, D>(mut a: ArrayBase<S, D>, to: Axis, from: Axis) -> ArrayBase<S, D>
+where
+    S: Data<Elem = A>,
+    D: Dimension,
+{
+    let i = to.index();
+    let mut j = from.index();
+    if j > i {
+        while i != j {
+            a.swap_axes(i, j);
+            j -= 1;
+        }
+    } else {
+        while i != j {
+            a.swap_axes(i, j);
+            j += 1;
+        }
+    }
+    a
+}
+
+pub fn tensordot<A, S, S2, D, E>(
+    t1: &ArrayBase<S, D>,
+    t2: &ArrayBase<S2, E>,
+    t1_axes: &[Axis],
+    t2_axes: &[Axis],
+) -> ArrayD<A>
+where
+    A: ndarray::LinalgScalar,
+    S: Data<Elem = A>,
+    S2: Data<Elem = A>,
+    D: Dimension,
+    E: Dimension,
+{
+    let num_axes = t1_axes.len();
+    assert!(num_axes == t2_axes.len());
+    let mut t1_startpositions: Vec<_> = t1_axes.iter().map(|x| x.index()).collect();
+    let mut t2_startpositions: Vec<_> = t2_axes.iter().map(|x| x.index()).collect();
+
+    // Probably a better way to do this...
+    let t1_uniques: HashSet<_> = t1_startpositions.iter().cloned().collect();
+    let t2_uniques: HashSet<_> = t2_startpositions.iter().cloned().collect();
+    assert!(num_axes == t1_uniques.len());
+    assert!(num_axes == t2_uniques.len());
+
+    // Rolls the axes specified in t1 and t2 to the back and front respectively,
+    // then calls tensordot_fixed_order(rolled_t1, rolled_t2, t1_axes.len())
+    let mut rolled_t1 = t1.view();
+    let mut rolled_t2 = t2.view();
+    let t1_num_dimensions = t1.shape().len();
+
+    // Rolling is a little bit of a pain; unfortunately can't just
+    // swap them since that would mess up the order
+    //
+    // Imagine you have 6 dimensions and t1_axes is [4, 0, 2]
+    // Start with [0, 1, 2, 3, 4, 5]
+    // Want to end up with [1, 3, 5, 4, 0, 2]
+    // First roll 2 all the way to the end
+    // [0, 1, 3, 4, 5, 2]
+    // Then roll *0 = 0 to n-1
+    // [1, 3, 4, 5, 0, 2]
+    // Then roll **4 = 2 to n-2
+    // [1, 3, 5, 4, 0, 2]
+    // Done
+    //
+    // If we start from the last element of t1_axes,
+    // we will only ever be rolling things forward (or not moving them)
+    for final_pos in 0..num_axes {
+        // t1_sp[3 - 0 - 1] == t1_sp[2] == 2
+        let t1_start_pos = t1_startpositions[num_axes - final_pos - 1];
+        // t1_fp = 6 - 0 - 1 == 5
+        let t1_final_pos = t1_num_dimensions - final_pos - 1;
+        let t2_start_pos = t2_startpositions[final_pos];
+        rolled_t1 = roll_axis(rolled_t1, Axis(t1_start_pos), Axis(t1_final_pos));
+        rolled_t2 = roll_axis(rolled_t2, Axis(t2_start_pos), Axis(final_pos));
+        for i in (final_pos + 1)..num_axes {
+            // Compare t1_sp[0..(2-1)] with t1_sp[2]
+            if t1_start_pos < t1_startpositions[num_axes - i - 1] {
+                t1_startpositions[num_axes - i - 1] -= 1;
+            }
+            if t2_start_pos > t2_startpositions[i] {
+                t2_startpositions[i] += 1;
+            }
+        }
+    }
+
+    tensordot_fixed_order(&rolled_t1, &rolled_t2, t1_axes.len())
 }
 
 //////// Versions that accept strings for WASM interop below here ////
