@@ -86,39 +86,45 @@ fn main() {
     //         einsum::validate_and_size_from_shapes_as_string_as_json("ii->i", "[[2,2]]")
     //     );
     //
-    let a = arr2(&[[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11]]);
-    let b = arr2(&[
-        [0, 10, 20, 30, 40],
-        [50, 60, 70, 80, 90],
-        [100, 110, 120, 130, 140],
-        [150, 160, 170, 180, 190],
-    ]);
-    println!("{:?}\n", einsum::slow_einsum("ij,jk->ik", &[&a, &b]));
-
-    let c = arr2(&[[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11], [12, 13, 14, 15]]);
-    println!("{:?}\n", einsum::slow_einsum("ii->i", &[&c]));
-
-    println!("{:?}\n", einsum::slow_einsum("ii->", &[&c]));
-
-    println!("{:?}\n", einsum::slow_einsum("ii", &[&c]));
-
-    println!("{:?}\n", einsum::slow_einsum("ji", &[&c]));
-
-    println!("{:?}\n", einsum::slow_einsum("ji->", &[&c]));
-
-    println!(
-        "{:?}\n",
-        // einsum::slow_einsum_with_flattened_operands_as_string::<f64>(
-        einsum::slow_einsum_with_flattened_operands_as_flattened_json_string(
-            "ij",
-            r##"
-            [
-                {
-                    "contents": [0, 1, 2, 3],
-                    "shape": [2, 2]
-                }
-            ]
-            "##
-        )
-    )
+    // let a = arr2(&[[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11]]);
+    // let b = arr2(&[
+    //     [0, 10, 20, 30, 40],
+    //     [50, 60, 70, 80, 90],
+    //     [100, 110, 120, 130, 140],
+    //     [150, 160, 170, 180, 190],
+    // ]);
+    // println!("{:?}\n", einsum::slow_einsum("ij,jk->ik", &[&a, &b]));
+    //
+    // let c = arr2(&[[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11], [12, 13, 14, 15]]);
+    // println!("{:?}\n", einsum::slow_einsum("ii->i", &[&c]));
+    //
+    // println!("{:?}\n", einsum::slow_einsum("ii->", &[&c]));
+    //
+    // println!("{:?}\n", einsum::slow_einsum("ii", &[&c]));
+    //
+    // println!("{:?}\n", einsum::slow_einsum("ji", &[&c]));
+    //
+    // println!("{:?}\n", einsum::slow_einsum("ji->", &[&c]));
+    //
+    // println!(
+    //     "{:?}\n",
+    //     // einsum::slow_einsum_with_flattened_operands_as_string::<f64>(
+    //     einsum::slow_einsum_with_flattened_operands_as_flattened_json_string(
+    //         "ij",
+    //         r##"
+    //         [
+    //             {
+    //                 "contents": [0, 1, 2, 3],
+    //                 "shape": [2, 2]
+    //             }
+    //         ]
+    //         "##
+    //     )
+    // )
+    let m1 = Array::from_shape_vec((4, 3, 2), (0..2 * 3 * 4).collect()).unwrap();
+    let m2 = Array::from_shape_vec((3, 4, 5), (0..3 * 4 * 5).collect()).unwrap();
+    let mut v1 = m1.view();
+    v1.swap_axes(0, 2);
+    println!("{:?}", &v1);
+    println!("{:?}", einsum::tensordot_fixed_order(&v1, &m2, 2));
 }

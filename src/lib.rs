@@ -1,4 +1,17 @@
 #![feature(custom_attribute)]
+/// Copyright 2019 Jared Samet
+///
+/// Licensed under the Apache License, Version 2.0 (the "License");
+/// you may not use this file except in compliance with the License.
+/// You may obtain a copy of the License at
+///
+///     http://www.apache.org/licenses/LICENSE-2.0
+///
+/// Unless required by applicable law or agreed to in writing, software
+/// distributed under the License is distributed on an "AS IS" BASIS,
+/// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+/// See the License for the specific language governing permissions and
+///limitations under the License.
 
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -8,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 use ndarray::prelude::*;
-use ndarray::{Data, IxDyn};
+use ndarray::{Data, IxDyn, LinalgScalar};
 
 #[derive(Debug)]
 pub struct EinsumParse {
@@ -31,22 +44,22 @@ pub struct SizedContraction {
     output_size: OutputSize,
 }
 
-pub trait Einsummable:
-    Copy
-    + std::ops::Add<Output = Self>
-    + num_traits::identities::Zero
-    + std::ops::Mul<Output = Self>
-    + num_traits::identities::One
-{
-}
-impl<A> Einsummable for A where
-    A: Copy
-        + std::ops::Add<Output = A>
-        + num_traits::identities::Zero
-        + std::ops::Mul<Output = A>
-        + num_traits::identities::One
-{
-}
+// pub trait Einsummable:
+//     Copy
+//     + std::ops::Add<Output = Self>
+//     + num_traits::identities::Zero
+//     + std::ops::Mul<Output = Self>
+//     + num_traits::identities::One
+// {
+// }
+// impl<A> Einsummable for A where
+//     A: Copy
+//         + std::ops::Add<Output = A>
+//         + num_traits::identities::Zero
+//         + std::ops::Mul<Output = A>
+//         + num_traits::identities::One
+// {
+// }
 
 pub trait ArrayLike<A> {
     fn into_dyn_view(&self) -> ArrayView<A, IxDyn>;
@@ -232,7 +245,7 @@ fn make_index(indices: &str, bindings: &HashMap<char, usize>) -> IxDyn {
     IxDyn(&v)
 }
 
-fn partial_einsum_inner_loop<A: Einsummable>(
+fn partial_einsum_inner_loop<A: LinalgScalar>(
     operands: &[&ArrayViewD<A>],
     operand_indices: &Vec<String>,
     bound_indices: &HashMap<char, usize>,
@@ -287,7 +300,7 @@ fn partial_einsum_inner_loop<A: Einsummable>(
     }
 }
 
-fn partial_einsum_outer_loop<A: Einsummable>(
+fn partial_einsum_outer_loop<A: LinalgScalar>(
     operands: &[&ArrayViewD<A>],
     operand_indices: &Vec<String>,
     bound_indices: &HashMap<char, usize>,
@@ -352,7 +365,7 @@ fn partial_einsum_outer_loop<A: Einsummable>(
     }
 }
 
-pub fn slow_einsum_given_sized_contraction<A: Einsummable>(
+pub fn slow_einsum_given_sized_contraction<A: LinalgScalar>(
     sized_contraction: &SizedContraction,
     operands: &[&dyn ArrayLike<A>],
 ) -> ArrayD<A> {
@@ -386,7 +399,7 @@ pub fn slow_einsum_given_sized_contraction<A: Einsummable>(
     )
 }
 
-pub fn slow_einsum<A: Einsummable>(
+pub fn slow_einsum<A: LinalgScalar>(
     input_string: &str,
     operands: &[&dyn ArrayLike<A>],
 ) -> Result<ArrayD<A>, &'static str> {
@@ -395,6 +408,62 @@ pub fn slow_einsum<A: Einsummable>(
         &sized_contraction,
         operands,
     ))
+}
+
+pub fn tensordot_fixed_order<A, S, S2, D, E>(
+    t1: &ArrayBase<S, D>,
+    t2: &ArrayBase<S2, E>,
+    last_n: usize,
+) -> ArrayD<A>
+where
+    A: ndarray::LinalgScalar,
+    S: Data<Elem = A>,
+    S2: Data<Elem = A>,
+    D: Dimension,
+    E: Dimension,
+{
+    // Returns an n-dimensional array where n = |D| + |E| - 2 * last_n.
+    // The shape will be (...t1.shape(:-last_n), ...t2.shape(last_n:))
+    // i.e. if t1.shape = (3,4,5), t2.shape = (4,5,6), and last_n=2,
+    // the returned array will have shape (3,6).
+    //
+    // Basically you reshape each one into a 2-D matrix (no matter what
+    // the starting size was) and then do a matrix multiplication
+    let mut len_uncontracted_t1 = 1;
+    let mut len_uncontracted_t2 = 1;
+    let mut len_contracted_t1 = 1;
+    let mut len_contracted_t2 = 1;
+    let mut output_shape = Vec::<usize>::new();
+    let num_axes_t1 = t1.shape().len();
+    for (axis, &axis_length) in t1.shape().iter().enumerate() {
+        if axis < (num_axes_t1 - last_n) {
+            len_uncontracted_t1 *= axis_length;
+            output_shape.push(axis_length);
+        } else {
+            len_contracted_t1 *= axis_length;
+        }
+    }
+    for (axis, &axis_length) in t2.shape().iter().enumerate() {
+        if axis < last_n {
+            len_contracted_t2 *= axis_length;
+        } else {
+            len_uncontracted_t2 *= axis_length;
+            output_shape.push(axis_length);
+        }
+    }
+    let matrix1 = Array::from_shape_vec(t1.raw_dim(), t1.iter().cloned().collect())
+        .unwrap()
+        .into_shape((len_uncontracted_t1, len_contracted_t1))
+        .unwrap();
+    let matrix2 = Array::from_shape_vec(t2.raw_dim(), t2.iter().cloned().collect())
+        .unwrap()
+        .into_shape((len_contracted_t2, len_uncontracted_t2))
+        .unwrap();
+
+    matrix1
+        .dot(&matrix2)
+        .into_shape(IxDyn(&output_shape))
+        .unwrap()
 }
 
 //////// Versions that accept strings for WASM interop below here ////
@@ -410,7 +479,7 @@ pub struct FlattenedOperand<T> {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FlattenedOperandList<T>(pub Vec<FlattenedOperand<T>>);
 
-fn unflatten_operand<A: Einsummable>(
+fn unflatten_operand<A: LinalgScalar>(
     flattened_operand: &FlattenedOperand<A>,
 ) -> Result<ArrayD<A>, ndarray::ShapeError> {
     Array::from_shape_vec(
@@ -419,7 +488,7 @@ fn unflatten_operand<A: Einsummable>(
     )
 }
 
-fn flatten_operand<A: Einsummable>(unflattened_operand: &ArrayD<A>) -> FlattenedOperand<A> {
+fn flatten_operand<A: LinalgScalar>(unflattened_operand: &ArrayD<A>) -> FlattenedOperand<A> {
     FlattenedOperand {
         shape: Vec::from(unflattened_operand.shape()),
         contents: unflattened_operand.iter().map(|x| *x).collect::<Vec<A>>(),
@@ -438,7 +507,7 @@ pub fn validate_and_size_from_shapes_as_string(
     }
 }
 
-pub fn slow_einsum_with_flattened_operands<A: Einsummable>(
+pub fn slow_einsum_with_flattened_operands<A: LinalgScalar>(
     input_string: &str,
     flattened_operands: &[&FlattenedOperand<A>],
 ) -> Result<ArrayD<A>, &'static str> {
@@ -463,7 +532,7 @@ pub fn slow_einsum_with_flattened_operands_as_string_generic<A>(
     flattened_operands_as_string: &str,
 ) -> Result<ArrayD<A>, &'static str>
 where
-    A: Einsummable + serde::de::DeserializeOwned,
+    A: LinalgScalar + serde::de::DeserializeOwned,
 {
     let maybe_flattened_operands =
         serde_json::from_str::<FlattenedOperandList<A>>(flattened_operands_as_string);
