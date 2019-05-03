@@ -515,19 +515,22 @@ where
 
 fn einsum_singleton_norepeats<A, S, D>(
     sized_contraction: &SizedContraction,
-    tensor: &ArrayBase<S, D>
+    tensor: &ArrayBase<S, D>,
 ) -> ArrayD<A>
 where
     A: LinalgScalar,
     S: Data<Elem = A>,
-    D: Dimension
+    D: Dimension,
 {
     // Handles the case where it's ijk->ik; just sums
     assert!(sized_contraction.contraction.operand_indices.len() == 1);
     let mut result = tensor.view().into_dyn().into_owned();
     let mut original_order = Vec::new();
 
-    for (i, c) in sized_contraction.contraction.operand_indices[0].chars().enumerate() {
+    for (i, c) in sized_contraction.contraction.operand_indices[0]
+        .chars()
+        .enumerate()
+    {
         if !(sized_contraction.contraction.output_indices.contains(&c)) {
             result = result.sum_axis(Axis(i));
         } else {
@@ -548,44 +551,37 @@ where
 }
 
 // TODO: Replace this by calculating the right dimensions and strides to use
-// pub fn diagonalize_singleton<A, S, D>(
-//     tensor: &ArrayBase<S, D>,
-//     axes: &[usize]
-// ) -> ArrayD<A>
-// where
-//     A: LinalgScalar,
-//     S: Data<Elem = A>,
-//     D: Dimension
-// {
-//     assert!(axes.len() > 0);
-//     let axis_length = tensor.shape()[axes[0]];
-//     let tensor_dyn_view = tensor.view().into_dyn();
-//     let slices: Vec<_> = (0..axis_length)
-//         .map(|i| {
-//             let mut subview_index = Vec::new();
-//             for j in 0..tensor.ndim() {
-//                 if axes.contains(&j) {
-//                     subview_index.push(Index(i.try_into().unwrap()));
-//                 } else {
-//                     subview_index.push(Slice{start: 0, end: None, step: 1});
-//                 }
-//             }
-//             // let si = SliceInfo::<Vec<SliceOrIndex>, IxDyn>::new(subview_index).unwrap();
-//             tensor_dyn_view.slice(s![&subview_index]).insert_axis(Axis(0))
-//         })
-//         .collect();
-//     let slice_views: Vec<_> = slices.iter().map(|s| s.view()).collect();
-//     ndarray::stack(Axis(0), &slice_views).unwrap()
-// }
+pub fn diagonalize_singleton<A, S, D>(tensor: &ArrayBase<S, D>, axes: &[usize]) -> ArrayD<A>
+where
+    A: LinalgScalar,
+    S: Data<Elem = A>,
+    D: Dimension,
+{
+    assert!(axes.len() > 0);
+    let axis_length = tensor.shape()[axes[0]];
+    let slices: Vec<_> = (0..axis_length)
+        .map(|i| {
+            let mut subview = tensor.view().into_dyn().into_owned();
+            let mut foo = Vec::from(axes);
+            foo.sort();
+            for &j in foo.iter().rev() {
+                subview = subview.index_axis(Axis(j), i).into_owned();
+            }
+            subview.insert_axis(Axis(0))
+        })
+        .collect();
+    let slice_views: Vec<_> = slices.iter().map(|s| s.view()).collect();
+    ndarray::stack(Axis(0), &slice_views).unwrap()
+}
 
 pub fn einsum_singleton<A, S, D>(
     sized_contraction: &SizedContraction,
-    tensor: &ArrayBase<S, D>
+    tensor: &ArrayBase<S, D>,
 ) -> ArrayD<A>
 where
     A: LinalgScalar,
     S: Data<Elem = A>,
-    D: Dimension
+    D: Dimension,
 {
     // Handles the case where it's iijk->ik; just diagonalization + sums
     assert!(sized_contraction.contraction.operand_indices.len() == 1);

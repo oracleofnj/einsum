@@ -77,6 +77,24 @@ fn it_collapses_a_singleton_without_repeats() {
 }
 
 #[test]
+fn it_diagonalizes_a_singleton() {
+    // iiji
+    let s = rand_array((4, 4, 2, 4));
+
+    let mut correct_answer: Array2<f64> = Array::zeros((4, 2));
+    for i in 0..4 {
+        for j in 0..2 {
+            correct_answer[[i, j]] = s[[i, i, j, i]];
+        }
+    }
+
+    let collapsed = einsum::diagonalize_singleton(&s, &[0, 1, 3]);
+
+    assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
+}
+
+
+#[test]
 fn it_collapses_a_singleton() {
     // iijkl->lij
     let s = rand_array((4, 4, 2, 3, 5));
