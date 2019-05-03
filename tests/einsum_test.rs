@@ -78,17 +78,39 @@ fn it_collapses_a_singleton_without_repeats() {
 
 #[test]
 fn it_diagonalizes_a_singleton() {
-    // iiji
-    let s = rand_array((4, 4, 2, 4));
+    // jkiii
+    let s = rand_array((2, 3, 4, 4, 4));
 
-    let mut correct_answer: Array2<f64> = Array::zeros((4, 2));
+    let mut correct_answer: Array3<f64> = Array::zeros((2, 4, 3));
     for i in 0..4 {
         for j in 0..2 {
-            correct_answer[[i, j]] = s[[i, i, j, i]];
+            for k in 0..3 {
+                correct_answer[[j, i, k]] = s[[j, k, i, i, i]];
+            }
         }
     }
 
-    let collapsed = einsum::diagonalize_singleton(&s, &[0, 1, 3]);
+    let collapsed = einsum::diagonalize_singleton(&s, &[2, 3, 4], 1);
+
+    assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
+}
+
+#[test]
+fn it_collapses_a_singleton_with_multiple_repeats() {
+    // kjiji->ijk
+    let s = rand_array((4, 3, 2, 3, 2));
+
+    let mut correct_answer: Array3<f64> = Array::zeros((2, 3, 4));
+    for i in 0..2 {
+        for j in 0..3 {
+            for k in 0..4 {
+                correct_answer[[i, j, k]] = s[[k, j, i, j, i]];
+            }
+        }
+    }
+
+    let sc = einsum::validate_and_size("kjiji->ijk", &[&s]).unwrap();
+    let collapsed = einsum::einsum_singleton(&sc, &s);
 
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }

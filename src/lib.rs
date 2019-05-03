@@ -44,23 +44,6 @@ pub struct SizedContraction {
     output_size: OutputSize,
 }
 
-// pub trait Einsummable:
-//     Copy
-//     + std::ops::Add<Output = Self>
-//     + num_traits::identities::Zero
-//     + std::ops::Mul<Output = Self>
-//     + num_traits::identities::One
-// {
-// }
-// impl<A> Einsummable for A where
-//     A: Copy
-//         + std::ops::Add<Output = A>
-//         + num_traits::identities::Zero
-//         + std::ops::Mul<Output = A>
-//         + num_traits::identities::One
-// {
-// }
-
 pub trait ArrayLike<A> {
     fn into_dyn_view(&self) -> ArrayView<A, IxDyn>;
 }
@@ -551,7 +534,11 @@ where
 }
 
 // TODO: Replace this by calculating the right dimensions and strides to use
-pub fn diagonalize_singleton<A, S, D>(tensor: &ArrayBase<S, D>, axes: &[usize]) -> ArrayD<A>
+pub fn diagonalize_singleton<A, S, D>(
+    tensor: &ArrayBase<S, D>,
+    axes: &[usize],
+    destination_axis: usize,
+) -> ArrayD<A>
 where
     A: LinalgScalar,
     S: Data<Elem = A>,
@@ -567,59 +554,104 @@ where
             for &j in foo.iter().rev() {
                 subview = subview.index_axis(Axis(j), i).into_owned();
             }
-            subview.insert_axis(Axis(0))
+            subview.insert_axis(Axis(destination_axis))
         })
         .collect();
     let slice_views: Vec<_> = slices.iter().map(|s| s.view()).collect();
-    ndarray::stack(Axis(0), &slice_views).unwrap()
+    ndarray::stack(Axis(destination_axis), &slice_views).unwrap()
 }
 
+pub fn diagonalize_singleton_char<A>(
+    tensor: &mut ArrayD<A>,
+    operand_indices: &mut String,
+    repeated_index: char,
+) where
+    A: LinalgScalar,
+{
+    let mut new_string = String::from("");
+    let mut axes = Vec::new();
+    new_string.push(repeated_index);
+    for (i, c) in operand_indices.chars().enumerate() {
+        if c != repeated_index {
+            new_string.push(c);
+        } else {
+            axes.push(i);
+        }
+    }
+    let new_tensor = diagonalize_singleton(tensor, &axes, 0);
+
+    *tensor = new_tensor;
+    *operand_indices = new_string;
+}
+
+// TODO: Figure out correct magic with strides and dimensions
 pub fn einsum_singleton<A, S, D>(
     sized_contraction: &SizedContraction,
     tensor: &ArrayBase<S, D>,
 ) -> ArrayD<A>
 where
-    A: LinalgScalar,
+    A: LinalgScalar + std::fmt::Debug,
     S: Data<Elem = A>,
     D: Dimension,
 {
     // Handles the case where it's iijk->ik; just diagonalization + sums
     assert!(sized_contraction.contraction.operand_indices.len() == 1);
+    let mut distinct_elements = HashSet::new();
+    let mut repeated_elements = HashSet::new();
+    for c in sized_contraction.contraction.operand_indices[0].chars() {
+        if distinct_elements.contains(&c) {
+            repeated_elements.insert(c);
+        } else {
+            distinct_elements.insert(c);
+        }
+    }
 
-    // Could do this better by doing some magic with strides and dimensions
-    // let mut repeats = HashMap::new();
-    // let repeats: HashSet<_> = sized_contraction.contraction.operand_indices[0].chars().collect();
-
-    let no_repeated_elements = true; //uniques.len() == sized_contraction.contraction.operand_indices[0].chars().count();
+    let no_repeated_elements = repeated_elements.len() == 0;
 
     if no_repeated_elements {
         einsum_singleton_norepeats(sized_contraction, tensor)
     } else {
-        let traced = tensor;
-        einsum_singleton_norepeats(sized_contraction, traced)
+        let mut operand_indices = sized_contraction.contraction.operand_indices[0].clone();
+        let mut modified_tensor = tensor.view().into_dyn().into_owned();
+
+        for &c in repeated_elements.iter() {
+            diagonalize_singleton_char(&mut modified_tensor, &mut operand_indices, c);
+        }
+
+        // TODO: Just make the new contraction directly
+        let mut new_einsum_string = operand_indices.clone();
+        new_einsum_string += "->";
+        new_einsum_string += &sized_contraction
+            .contraction
+            .output_indices
+            .iter()
+            .collect::<String>();
+        let new_contraction = validate_and_size(&new_einsum_string, &[&modified_tensor]).unwrap();
+
+        einsum_singleton_norepeats(&new_contraction, &modified_tensor)
     }
 }
 
-pub fn einsum_pair_norepeats<A, S, S2, D, E>(
-    sized_contraction: &SizedContraction,
-    t1: &ArrayBase<S, D>,
-    t2: &ArrayBase<S2, E>,
-) -> ArrayD<A>
-where
-    A: LinalgScalar,
-    S: Data<Elem = A>,
-    S2: Data<Elem = A>,
-    D: Dimension,
-    E: Dimension,
-{
-    // Handles just the case where it's like abc,bcde->ae
-    assert!(sized_contraction.contraction.operand_indices.len() == 2);
-
-    // First eliminate indices that
-
-
-    t1.view().into_dyn().into_owned()
-}
+// pub fn einsum_pair_norepeats<A, S, S2, D, E>(
+//     sized_contraction: &SizedContraction,
+//     t1: &ArrayBase<S, D>,
+//     t2: &ArrayBase<S2, E>,
+// ) -> ArrayD<A>
+// where
+//     A: LinalgScalar,
+//     S: Data<Elem = A>,
+//     S2: Data<Elem = A>,
+//     D: Dimension,
+//     E: Dimension,
+// {
+//     // Handles just the case where it's like abc,bcde->ae
+//     assert!(sized_contraction.contraction.operand_indices.len() == 2);
+//
+//     // First eliminate indices that
+//
+//
+//     t1.view().into_dyn().into_owned()
+// }
 
 //////// Versions that accept strings for WASM interop below here ////
 #[derive(Debug, Serialize, Deserialize)]
