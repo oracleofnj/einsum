@@ -1,17 +1,17 @@
 #![feature(custom_attribute)]
-/// Copyright 2019 Jared Samet
-///
-/// Licensed under the Apache License, Version 2.0 (the "License");
-/// you may not use this file except in compliance with the License.
-/// You may obtain a copy of the License at
-///
-///     http://www.apache.org/licenses/LICENSE-2.0
-///
-/// Unless required by applicable law or agreed to in writing, software
-/// distributed under the License is distributed on an "AS IS" BASIS,
-/// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-/// See the License for the specific language governing permissions and
-///limitations under the License.
+// Copyright 2019 Jared Samet
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -511,6 +511,118 @@ where
     let rolled_t2 = t2.view().into_dyn().permuted_axes(permutation_t2);
 
     tensordot_fixed_order(&rolled_t1, &rolled_t2, t1_axes.len())
+}
+
+fn einsum_singleton_norepeats<A, S, D>(
+    sized_contraction: &SizedContraction,
+    tensor: &ArrayBase<S, D>
+) -> ArrayD<A>
+where
+    A: LinalgScalar,
+    S: Data<Elem = A>,
+    D: Dimension
+{
+    // Handles the case where it's ijk->ik; just sums
+    assert!(sized_contraction.contraction.operand_indices.len() == 1);
+    let mut result = tensor.view().into_dyn().into_owned();
+    let mut original_order = Vec::new();
+
+    for (i, c) in sized_contraction.contraction.operand_indices[0].chars().enumerate() {
+        if !(sized_contraction.contraction.output_indices.contains(&c)) {
+            result = result.sum_axis(Axis(i));
+        } else {
+            original_order.push(c);
+        }
+    }
+
+    let mut permutation = Vec::new();
+    // i in the j-th place in the axes sequence means self's i-th axis becomes self.permuted_axes()'s j-th axis
+    // If it's iklm->mil, then after summing we'll have ilm
+    // we want to make [2, 0, 1]
+    for &c in sized_contraction.contraction.output_indices.iter() {
+        let pos = original_order.iter().position(|&x| x == c).unwrap();
+        permutation.push(pos);
+    }
+
+    result.permuted_axes(permutation)
+}
+
+// TODO: Replace this by calculating the right dimensions and strides to use
+// pub fn diagonalize_singleton<A, S, D>(
+//     tensor: &ArrayBase<S, D>,
+//     axes: &[usize]
+// ) -> ArrayD<A>
+// where
+//     A: LinalgScalar,
+//     S: Data<Elem = A>,
+//     D: Dimension
+// {
+//     assert!(axes.len() > 0);
+//     let axis_length = tensor.shape()[axes[0]];
+//     let tensor_dyn_view = tensor.view().into_dyn();
+//     let slices: Vec<_> = (0..axis_length)
+//         .map(|i| {
+//             let mut subview_index = Vec::new();
+//             for j in 0..tensor.ndim() {
+//                 if axes.contains(&j) {
+//                     subview_index.push(Index(i.try_into().unwrap()));
+//                 } else {
+//                     subview_index.push(Slice{start: 0, end: None, step: 1});
+//                 }
+//             }
+//             // let si = SliceInfo::<Vec<SliceOrIndex>, IxDyn>::new(subview_index).unwrap();
+//             tensor_dyn_view.slice(s![&subview_index]).insert_axis(Axis(0))
+//         })
+//         .collect();
+//     let slice_views: Vec<_> = slices.iter().map(|s| s.view()).collect();
+//     ndarray::stack(Axis(0), &slice_views).unwrap()
+// }
+
+pub fn einsum_singleton<A, S, D>(
+    sized_contraction: &SizedContraction,
+    tensor: &ArrayBase<S, D>
+) -> ArrayD<A>
+where
+    A: LinalgScalar,
+    S: Data<Elem = A>,
+    D: Dimension
+{
+    // Handles the case where it's iijk->ik; just diagonalization + sums
+    assert!(sized_contraction.contraction.operand_indices.len() == 1);
+
+    // Could do this better by doing some magic with strides and dimensions
+    // let mut repeats = HashMap::new();
+    // let repeats: HashSet<_> = sized_contraction.contraction.operand_indices[0].chars().collect();
+
+    let no_repeated_elements = true; //uniques.len() == sized_contraction.contraction.operand_indices[0].chars().count();
+
+    if no_repeated_elements {
+        einsum_singleton_norepeats(sized_contraction, tensor)
+    } else {
+        let traced = tensor;
+        einsum_singleton_norepeats(sized_contraction, traced)
+    }
+}
+
+pub fn einsum_pair_norepeats<A, S, S2, D, E>(
+    sized_contraction: &SizedContraction,
+    t1: &ArrayBase<S, D>,
+    t2: &ArrayBase<S2, E>,
+) -> ArrayD<A>
+where
+    A: LinalgScalar,
+    S: Data<Elem = A>,
+    S2: Data<Elem = A>,
+    D: Dimension,
+    E: Dimension,
+{
+    // Handles just the case where it's like abc,bcde->ae
+    assert!(sized_contraction.contraction.operand_indices.len() == 2);
+
+    // First eliminate indices that
+
+
+    t1.view().into_dyn().into_owned()
 }
 
 //////// Versions that accept strings for WASM interop below here ////

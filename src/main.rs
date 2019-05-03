@@ -121,13 +121,4 @@ fn main() {
     //         "##
     //     )
     // )
-    let m1 = Array::from_shape_vec((4, 3, 2), (0..2 * 3 * 4).collect()).unwrap();
-    let m2 = Array::from_shape_vec((3, 4, 5), (0..3 * 4 * 5).collect()).unwrap();
-    let mut v1 = m1.view();
-    v1.swap_axes(0, 2);
-    println!("{:?}", &v1);
-    println!(
-        "{:?}",
-        einsum::tensordot(&v1, &m2, &[Axis(2), Axis(1)], &[Axis(1), Axis(0)])
-    );
 }

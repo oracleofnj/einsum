@@ -1,3 +1,4 @@
+#![feature(test)]
 use einsum;
 use ndarray::prelude::*;
 use ndarray_rand::RandomExt;
@@ -10,7 +11,6 @@ where
 {
     Array::random(shape, Uniform::new(-5., 5.))
 }
-
 
 #[test]
 fn it_multiplies_two_matrices() {
@@ -50,4 +50,52 @@ fn it_transposes_a_matrix() {
     assert!(correct_answer.all_close(&tr1, TOL));
     assert!(correct_answer.all_close(&tr2, TOL));
     assert!(correct_answer.all_close(&tr3, TOL));
+}
+
+#[test]
+fn it_collapses_a_singleton_without_repeats() {
+    // ijkl->lij
+    let s = rand_array((4, 2, 3, 5));
+
+    let mut correct_answer: Array3<f64> = Array::zeros((5, 4, 2));
+    for l in 0..5 {
+        for i in 0..4 {
+            for j in 0..2 {
+                let mut r = 0.;
+                for k in 0..3 {
+                    r += s[[i, j, k, l]];
+                }
+                correct_answer[[l, i, j]] = r;
+            }
+        }
+    }
+
+    let sc = einsum::validate_and_size("ijkl->lij", &[&s]).unwrap();
+    let collapsed = einsum::einsum_singleton(&sc, &s);
+
+    assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
+}
+
+#[test]
+fn it_collapses_a_singleton() {
+    // iijkl->lij
+    let s = rand_array((4, 4, 2, 3, 5));
+
+    let mut correct_answer: Array3<f64> = Array::zeros((5, 4, 2));
+    for l in 0..5 {
+        for i in 0..4 {
+            for j in 0..2 {
+                let mut r = 0.;
+                for k in 0..3 {
+                    r += s[[i, i, j, k, l]];
+                }
+                correct_answer[[l, i, j]] = r;
+            }
+        }
+    }
+
+    let sc = einsum::validate_and_size("iijkl->lij", &[&s]).unwrap();
+    let collapsed = einsum::einsum_singleton(&sc, &s);
+
+    assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
