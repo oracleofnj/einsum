@@ -177,3 +177,58 @@ fn nostacks_handles_dot_product() {
     let dotted = einsum_pair_allused_nostacks(&sc, &lhs, &rhs);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
+
+#[test]
+fn nostacks_handles_outer_product() {
+    let lhs = rand_array((3,));
+    let rhs = rand_array((4,));
+
+    let mut correct_answer: Array2<f64> = Array::zeros((3, 4));
+    for i in 0..3 {
+        for j in 0..4 {
+            correct_answer[[i, j]] = lhs[[i]] * rhs[[j]];
+        }
+    }
+
+    let sc = validate_and_size("i,j->ij", &[&lhs, &rhs]).unwrap();
+    let dotted = einsum_pair_allused_nostacks(&sc, &lhs, &rhs);
+    assert!(correct_answer.all_close(&dotted, TOL));
+}
+
+#[test]
+fn nostacks_handles_matrix_vector_1() {
+    let lhs = rand_array((3, 4));
+    let rhs = rand_array((4,));
+
+    let mut correct_answer: Array1<f64> = Array::zeros((3,));
+    for i in 0..3 {
+        let mut res = 0.;
+        for j in 0..4 {
+            res += lhs[[i, j]] * rhs[[j]];
+        }
+        correct_answer[i] = res;
+    }
+
+    let sc = validate_and_size("ij,j->i", &[&lhs, &rhs]).unwrap();
+    let dotted = einsum_pair_allused_nostacks(&sc, &lhs, &rhs);
+    assert!(correct_answer.all_close(&dotted, TOL));
+}
+
+#[test]
+fn nostacks_handles_matrix_vector_2() {
+    let lhs = rand_array((3,));
+    let rhs = rand_array((3, 4));
+
+    let mut correct_answer: Array1<f64> = Array::zeros((4,));
+    for j in 0..4 {
+        let mut res = 0.;
+        for i in 0..3 {
+            res += lhs[[i]] * rhs[[i, j]];
+        }
+        correct_answer[j] = res;
+    }
+
+    let sc = validate_and_size("i,ij->j", &[&lhs, &rhs]).unwrap();
+    let dotted = einsum_pair_allused_nostacks(&sc, &lhs, &rhs);
+    assert!(correct_answer.all_close(&dotted, TOL));
+}

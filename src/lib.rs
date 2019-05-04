@@ -278,7 +278,7 @@ pub fn generate_classified_pair_contraction(
     for (output_position, &c) in output_indices.iter().enumerate() {
         match (
             lhs_indices.iter().position(|&x| x == c),
-            lhs_indices.iter().position(|&x| x == c),
+            rhs_indices.iter().position(|&x| x == c),
         ) {
             (Some(lhs_position), Some(rhs_position)) => {
                 stack_indices.insert(
@@ -315,7 +315,7 @@ pub fn generate_classified_pair_contraction(
     for &c in summation_indices.iter() {
         match (
             lhs_indices.iter().position(|&x| x == c),
-            lhs_indices.iter().position(|&x| x == c),
+            rhs_indices.iter().position(|&x| x == c),
         ) {
             (Some(lhs_position), Some(rhs_position)) => {
                 contracted_indices.insert(
@@ -686,7 +686,7 @@ where
     let mut len_contracted_t1 = 1;
     let mut len_contracted_t2 = 1;
     let mut output_shape = Vec::<usize>::new();
-    let num_axes_t1 = t1.shape().len();
+    let num_axes_t1 = t1.ndim();
     for (axis, &axis_length) in t1.shape().iter().enumerate() {
         if axis < (num_axes_t1 - last_n) {
             len_uncontracted_t1 *= axis_length;
@@ -745,7 +745,7 @@ where
     // Rolls the axes specified in t1 and t2 to the back and front respectively,
     // then calls tensordot_fixed_order(rolled_t1, rolled_t2, t1_axes.len())
     let mut permutation_t1 = Vec::new();
-    for i in 0..(t1.shape().len()) {
+    for i in 0..(t1.ndim()) {
         if !(t1_uniques.contains(&i)) {
             permutation_t1.push(i);
         }
@@ -755,7 +755,7 @@ where
 
     let mut permutation_t2 = Vec::new();
     permutation_t2.append(&mut t2_startpositions);
-    for i in 0..(t2.shape().len()) {
+    for i in 0..(t2.ndim()) {
         if !(t2_uniques.contains(&i)) {
             permutation_t2.push(i);
         }
@@ -793,7 +793,7 @@ where
     let mut t2_axes = Vec::new();
     for (_, &contracted_index) in classified_pair_contraction.contracted_indices.iter() {
         t1_axes.push(Axis(contracted_index.lhs_position));
-        t2_axes.push(Axis(contracted_index.lhs_position));
+        t2_axes.push(Axis(contracted_index.rhs_position));
     }
 
     let lhs_only_len = classified_pair_contraction.lhs_indices.len() - t1_axes.len();
@@ -805,6 +805,11 @@ where
             OuterIndexPosition::RHS(i) => permutation.push(lhs_only_len + i),
         }
     }
+
+    println!("cpc: {:?}", &classified_pair_contraction);
+    println!("t1_axes: {:?}", &t1_axes);
+    println!("t2_axes: {:?}", &t2_axes);
+    println!("final permutation: {:?}", permutation);
 
     tensordot(t1, t2, &t1_axes, &t2_axes).permuted_axes(permutation)
 }
