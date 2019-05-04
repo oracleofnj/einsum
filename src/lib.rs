@@ -393,109 +393,6 @@ pub fn slow_einsum<A: LinalgScalar>(
     ))
 }
 
-fn tensordot_fixed_order<A, S, S2, D, E>(
-    t1: &ArrayBase<S, D>,
-    t2: &ArrayBase<S2, E>,
-    last_n: usize,
-) -> ArrayD<A>
-where
-    A: ndarray::LinalgScalar,
-    S: Data<Elem = A>,
-    S2: Data<Elem = A>,
-    D: Dimension,
-    E: Dimension,
-{
-    // Returns an n-dimensional array where n = |D| + |E| - 2 * last_n.
-    // The shape will be (...t1.shape(:-last_n), ...t2.shape(last_n:))
-    // i.e. if t1.shape = (3,4,5), t2.shape = (4,5,6), and last_n=2,
-    // the returned array will have shape (3,6).
-    //
-    // Basically you reshape each one into a 2-D matrix (no matter what
-    // the starting size was) and then do a matrix multiplication
-    let mut len_uncontracted_t1 = 1;
-    let mut len_uncontracted_t2 = 1;
-    let mut len_contracted_t1 = 1;
-    let mut len_contracted_t2 = 1;
-    let mut output_shape = Vec::<usize>::new();
-    let num_axes_t1 = t1.shape().len();
-    for (axis, &axis_length) in t1.shape().iter().enumerate() {
-        if axis < (num_axes_t1 - last_n) {
-            len_uncontracted_t1 *= axis_length;
-            output_shape.push(axis_length);
-        } else {
-            len_contracted_t1 *= axis_length;
-        }
-    }
-    for (axis, &axis_length) in t2.shape().iter().enumerate() {
-        if axis < last_n {
-            len_contracted_t2 *= axis_length;
-        } else {
-            len_uncontracted_t2 *= axis_length;
-            output_shape.push(axis_length);
-        }
-    }
-    let matrix1 = Array::from_shape_vec(t1.raw_dim(), t1.iter().cloned().collect())
-        .unwrap()
-        .into_shape((len_uncontracted_t1, len_contracted_t1))
-        .unwrap();
-    let matrix2 = Array::from_shape_vec(t2.raw_dim(), t2.iter().cloned().collect())
-        .unwrap()
-        .into_shape((len_contracted_t2, len_uncontracted_t2))
-        .unwrap();
-
-    matrix1
-        .dot(&matrix2)
-        .into_shape(IxDyn(&output_shape))
-        .unwrap()
-}
-
-pub fn tensordot<A, S, S2, D, E>(
-    t1: &ArrayBase<S, D>,
-    t2: &ArrayBase<S2, E>,
-    t1_axes: &[Axis],
-    t2_axes: &[Axis],
-) -> ArrayD<A>
-where
-    A: ndarray::LinalgScalar,
-    S: Data<Elem = A>,
-    S2: Data<Elem = A>,
-    D: Dimension,
-    E: Dimension,
-{
-    let num_axes = t1_axes.len();
-    assert!(num_axes == t2_axes.len());
-    let mut t1_startpositions: Vec<_> = t1_axes.iter().map(|x| x.index()).collect();
-    let mut t2_startpositions: Vec<_> = t2_axes.iter().map(|x| x.index()).collect();
-
-    // Probably a better way to do this...
-    let t1_uniques: HashSet<_> = t1_startpositions.iter().cloned().collect();
-    let t2_uniques: HashSet<_> = t2_startpositions.iter().cloned().collect();
-    assert!(num_axes == t1_uniques.len());
-    assert!(num_axes == t2_uniques.len());
-
-    // Rolls the axes specified in t1 and t2 to the back and front respectively,
-    // then calls tensordot_fixed_order(rolled_t1, rolled_t2, t1_axes.len())
-    let mut permutation_t1 = Vec::new();
-    for i in 0..(t1.shape().len()) {
-        if !(t1_uniques.contains(&i)) {
-            permutation_t1.push(i);
-        }
-    }
-    permutation_t1.append(&mut t1_startpositions);
-    let rolled_t1 = t1.view().into_dyn().permuted_axes(permutation_t1);
-
-    let mut permutation_t2 = Vec::new();
-    permutation_t2.append(&mut t2_startpositions);
-    for i in 0..(t2.shape().len()) {
-        if !(t2_uniques.contains(&i)) {
-            permutation_t2.push(i);
-        }
-    }
-    let rolled_t2 = t2.view().into_dyn().permuted_axes(permutation_t2);
-
-    tensordot_fixed_order(&rolled_t1, &rolled_t2, t1_axes.len())
-}
-
 fn einsum_singleton_norepeats<A, S, D>(
     sized_contraction: &SizedContraction,
     tensor: &ArrayBase<S, D>,
@@ -632,26 +529,160 @@ where
     }
 }
 
-// pub fn einsum_pair_norepeats<A, S, S2, D, E>(
-//     sized_contraction: &SizedContraction,
-//     t1: &ArrayBase<S, D>,
-//     t2: &ArrayBase<S2, E>,
-// ) -> ArrayD<A>
-// where
-//     A: LinalgScalar,
-//     S: Data<Elem = A>,
-//     S2: Data<Elem = A>,
-//     D: Dimension,
-//     E: Dimension,
-// {
-//     // Handles just the case where it's like abc,bcde->ae
-//     assert!(sized_contraction.contraction.operand_indices.len() == 2);
-//
-//     // First eliminate indices that
-//
-//
-//     t1.view().into_dyn().into_owned()
-// }
+fn tensordot_fixed_order<A, S, S2, D, E>(
+    t1: &ArrayBase<S, D>,
+    t2: &ArrayBase<S2, E>,
+    last_n: usize,
+) -> ArrayD<A>
+where
+    A: ndarray::LinalgScalar,
+    S: Data<Elem = A>,
+    S2: Data<Elem = A>,
+    D: Dimension,
+    E: Dimension,
+{
+    // Returns an n-dimensional array where n = |D| + |E| - 2 * last_n.
+    // The shape will be (...t1.shape(:-last_n), ...t2.shape(last_n:))
+    // i.e. if t1.shape = (3,4,5), t2.shape = (4,5,6), and last_n=2,
+    // the returned array will have shape (3,6).
+    //
+    // Basically you reshape each one into a 2-D matrix (no matter what
+    // the starting size was) and then do a matrix multiplication
+    let mut len_uncontracted_t1 = 1;
+    let mut len_uncontracted_t2 = 1;
+    let mut len_contracted_t1 = 1;
+    let mut len_contracted_t2 = 1;
+    let mut output_shape = Vec::<usize>::new();
+    let num_axes_t1 = t1.shape().len();
+    for (axis, &axis_length) in t1.shape().iter().enumerate() {
+        if axis < (num_axes_t1 - last_n) {
+            len_uncontracted_t1 *= axis_length;
+            output_shape.push(axis_length);
+        } else {
+            len_contracted_t1 *= axis_length;
+        }
+    }
+    for (axis, &axis_length) in t2.shape().iter().enumerate() {
+        if axis < last_n {
+            len_contracted_t2 *= axis_length;
+        } else {
+            len_uncontracted_t2 *= axis_length;
+            output_shape.push(axis_length);
+        }
+    }
+    let matrix1 = Array::from_shape_vec(t1.raw_dim(), t1.iter().cloned().collect())
+        .unwrap()
+        .into_shape((len_uncontracted_t1, len_contracted_t1))
+        .unwrap();
+    let matrix2 = Array::from_shape_vec(t2.raw_dim(), t2.iter().cloned().collect())
+        .unwrap()
+        .into_shape((len_contracted_t2, len_uncontracted_t2))
+        .unwrap();
+
+    matrix1
+        .dot(&matrix2)
+        .into_shape(IxDyn(&output_shape))
+        .unwrap()
+}
+
+pub fn tensordot<A, S, S2, D, E>(
+    t1: &ArrayBase<S, D>,
+    t2: &ArrayBase<S2, E>,
+    t1_axes: &[Axis],
+    t2_axes: &[Axis],
+) -> ArrayD<A>
+where
+    A: ndarray::LinalgScalar,
+    S: Data<Elem = A>,
+    S2: Data<Elem = A>,
+    D: Dimension,
+    E: Dimension,
+{
+    let num_axes = t1_axes.len();
+    assert!(num_axes == t2_axes.len());
+    let mut t1_startpositions: Vec<_> = t1_axes.iter().map(|x| x.index()).collect();
+    let mut t2_startpositions: Vec<_> = t2_axes.iter().map(|x| x.index()).collect();
+
+    // Probably a better way to do this...
+    let t1_uniques: HashSet<_> = t1_startpositions.iter().cloned().collect();
+    let t2_uniques: HashSet<_> = t2_startpositions.iter().cloned().collect();
+    assert!(num_axes == t1_uniques.len());
+    assert!(num_axes == t2_uniques.len());
+
+    // Rolls the axes specified in t1 and t2 to the back and front respectively,
+    // then calls tensordot_fixed_order(rolled_t1, rolled_t2, t1_axes.len())
+    let mut permutation_t1 = Vec::new();
+    for i in 0..(t1.shape().len()) {
+        if !(t1_uniques.contains(&i)) {
+            permutation_t1.push(i);
+        }
+    }
+    permutation_t1.append(&mut t1_startpositions);
+    let rolled_t1 = t1.view().into_dyn().permuted_axes(permutation_t1);
+
+    let mut permutation_t2 = Vec::new();
+    permutation_t2.append(&mut t2_startpositions);
+    for i in 0..(t2.shape().len()) {
+        if !(t2_uniques.contains(&i)) {
+            permutation_t2.push(i);
+        }
+    }
+    let rolled_t2 = t2.view().into_dyn().permuted_axes(permutation_t2);
+
+    tensordot_fixed_order(&rolled_t1, &rolled_t2, t1_axes.len())
+}
+
+pub fn einsum_pair_allused_nostacks<A, S, S2, D, E>(
+    sized_contraction: &SizedContraction,
+    t1: &ArrayBase<S, D>,
+    t2: &ArrayBase<S2, E>,
+) -> ArrayD<A>
+where
+    A: LinalgScalar,
+    S: Data<Elem = A>,
+    S2: Data<Elem = A>,
+    D: Dimension,
+    E: Dimension,
+{
+    // Handles just the case where it's like abc,bce->ae
+    // Not allowed: abc,bcde -> ae [no d in output]
+    // Not allowed: abbc,bce -> ae [repeated b in input]
+    // In other words: each index of each tensor is unique,
+    // and is either in the other tensor or in the output, but not both
+    assert!(sized_contraction.contraction.operand_indices.len() == 2);
+
+    // If an index is in both tensors, it's part of the tensordot op
+    // Otherwise, it's in the output and we need to permute into the correct order
+    // afterwards
+
+    let lhs_indices = &sized_contraction.contraction.operand_indices[0];
+    let rhs_indices = &sized_contraction.contraction.operand_indices[1];
+    let mut lhs_only_len = 0;
+    let mut t1_axes = Vec::new();
+    let mut t2_axes = Vec::new();
+    for (i, c) in lhs_indices.chars().enumerate() {
+        if let Some(j) = rhs_indices.chars().position(|x| x == c) {
+            t1_axes.push(Axis(i));
+            t2_axes.push(Axis(j));
+        } else {
+            lhs_only_len += 1;
+        }
+    }
+
+    let mut permutation = Vec::new();
+    // i in the j-th place in the axes sequence means self's i-th axis becomes self.permuted_axes()'s j-th axis
+    // If it's iklm->mil, then after summing we'll have ilm
+    // we want to make [2, 0, 1]
+    for &c in sized_contraction.contraction.output_indices.iter() {
+        if let Some(lhs_pos) = lhs_indices.chars().position(|x| x == c) {
+            permutation.push(lhs_pos);
+        } else {
+            permutation.push(lhs_only_len + rhs_indices.chars().position(|x| x == c).unwrap())
+        }
+    }
+
+    tensordot(t1, t2, &t1_axes, &t2_axes).permuted_axes(permutation)
+}
 
 //////// Versions that accept strings for WASM interop below here ////
 #[derive(Debug, Serialize, Deserialize)]

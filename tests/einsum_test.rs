@@ -1,5 +1,5 @@
 #![feature(test)]
-use einsum;
+use einsum::*;
 use ndarray::prelude::*;
 use ndarray_rand::RandomExt;
 use rand::distributions::Uniform;
@@ -32,7 +32,7 @@ fn it_computes_the_trace() {
         .collect();
     let correct_answer = arr1(&diag).into_dyn();
 
-    let lib_output = einsum::slow_einsum("ii->i", &[&square_matrix]).unwrap();
+    let lib_output = slow_einsum("ii->i", &[&square_matrix]).unwrap();
 
     assert!(correct_answer.all_close(&lib_output, TOL));
 }
@@ -43,9 +43,9 @@ fn it_transposes_a_matrix() {
 
     let correct_answer = rect_matrix.t();
 
-    let tr1 = einsum::slow_einsum("ji", &[&rect_matrix]).unwrap();
-    let tr2 = einsum::slow_einsum("ij->ji", &[&rect_matrix]).unwrap();
-    let tr3 = einsum::slow_einsum("ji->ij", &[&rect_matrix]).unwrap();
+    let tr1 = slow_einsum("ji", &[&rect_matrix]).unwrap();
+    let tr2 = slow_einsum("ij->ji", &[&rect_matrix]).unwrap();
+    let tr3 = slow_einsum("ji->ij", &[&rect_matrix]).unwrap();
 
     assert!(correct_answer.all_close(&tr1, TOL));
     assert!(correct_answer.all_close(&tr2, TOL));
@@ -70,8 +70,8 @@ fn it_collapses_a_singleton_without_repeats() {
         }
     }
 
-    let sc = einsum::validate_and_size("ijkl->lij", &[&s]).unwrap();
-    let collapsed = einsum::einsum_singleton(&sc, &s);
+    let sc = validate_and_size("ijkl->lij", &[&s]).unwrap();
+    let collapsed = einsum_singleton(&sc, &s);
 
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
@@ -90,7 +90,7 @@ fn it_diagonalizes_a_singleton() {
         }
     }
 
-    let collapsed = einsum::diagonalize_singleton(&s, &[2, 3, 4], 1);
+    let collapsed = diagonalize_singleton(&s, &[2, 3, 4], 1);
 
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
@@ -109,8 +109,8 @@ fn it_collapses_a_singleton_with_multiple_repeats() {
         }
     }
 
-    let sc = einsum::validate_and_size("kjiji->ijk", &[&s]).unwrap();
-    let collapsed = einsum::einsum_singleton(&sc, &s);
+    let sc = validate_and_size("kjiji->ijk", &[&s]).unwrap();
+    let collapsed = einsum_singleton(&sc, &s);
 
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
@@ -134,8 +134,46 @@ fn it_collapses_a_singleton() {
         }
     }
 
-    let sc = einsum::validate_and_size("iijkl->lij", &[&s]).unwrap();
-    let collapsed = einsum::einsum_singleton(&sc, &s);
+    let sc = validate_and_size("iijkl->lij", &[&s]).unwrap();
+    let collapsed = einsum_singleton(&sc, &s);
 
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
+}
+
+#[test]
+fn tensordot_handles_degenerate_lhs() {
+    let lhs = arr0(1.);
+    let rhs = rand_array((2, 3));
+
+    let dotted = tensordot(&lhs, &rhs, &[], &[]);
+    assert!(rhs.into_dyn().all_close(&dotted, TOL));
+}
+
+#[test]
+fn tensordot_handles_degenerate_rhs() {
+    let lhs = rand_array((2, 3));
+    let rhs = arr0(1.);
+
+    let dotted = tensordot(&lhs, &rhs, &[], &[]);
+    assert!(lhs.into_dyn().all_close(&dotted, TOL));
+}
+
+#[test]
+fn tensordot_handles_degenerate_both() {
+    let lhs = arr0(1.);
+    let rhs = arr0(1.);
+
+    let dotted = tensordot(&lhs, &rhs, &[], &[]);
+    assert!(dotted[[]] == 1.);
+}
+
+#[test]
+fn nostacks_handles_dot_product() {
+    let lhs = rand_array((3,));
+    let rhs = rand_array((3,));
+
+    let correct_answer = arr0(lhs.dot(&rhs));
+    let sc = validate_and_size("i,i->", &[&lhs, &rhs]).unwrap();
+    let dotted = einsum_pair_allused_nostacks(&sc, &lhs, &rhs);
+    assert!(correct_answer.all_close(&dotted, TOL));
 }
