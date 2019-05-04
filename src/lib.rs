@@ -77,14 +77,32 @@ pub struct OuterIndex {
 }
 
 // TODO: Replace the chars here with usizes and the HashMaps with vecs
+
+#[derive(Copy, Clone, Debug)]
+pub enum IndexInfo {
+    StackInfo(StackIndex),
+    ContractedInfo(ContractedIndex),
+    OuterInfo(OuterIndex),
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct IndexWithInfo {
+    index: char,
+    index_info: IndexInfo,
+}
+
+type StackIndexMap = HashMap<char, StackIndex>;
+type ContractedIndexMap = HashMap<char, ContractedIndex>;
+type OuterIndexMap = HashMap<char, OuterIndex>;
+
 #[derive(Debug)]
 pub struct ClassifiedPairContraction {
-    lhs_indices: Vec<char>,
-    rhs_indices: Vec<char>,
-    output_indices: Vec<char>,
-    stack_indices: HashMap<char, StackIndex>,
-    contracted_indices: HashMap<char, ContractedIndex>,
-    outer_indices: HashMap<char, OuterIndex>,
+    lhs_indices: Vec<IndexWithInfo>,
+    rhs_indices: Vec<IndexWithInfo>,
+    output_indices: Vec<IndexWithInfo>,
+    stack_indices: StackIndexMap,
+    contracted_indices: ContractedIndexMap,
+    outer_indices: OuterIndexMap,
 }
 
 pub trait ArrayLike<A> {
@@ -256,6 +274,36 @@ pub fn validate_and_size<A>(
     validate_and_size_from_shapes(input_string, &get_operand_shapes(operands))
 }
 
+fn generate_info_vector(
+    operand_indices: &[char],
+    stack_indices: &StackIndexMap,
+    outer_indices: &OuterIndexMap,
+    contracted_indices: &ContractedIndexMap,
+) -> Vec<IndexWithInfo> {
+    let mut indices = Vec::new();
+    for &c in operand_indices {
+        if let Some(&stack_info) = stack_indices.get(&c) {
+            indices.push(IndexWithInfo {
+                index: c,
+                index_info: IndexInfo::StackInfo(stack_info),
+            });
+        } else if let Some(&outer_info) = outer_indices.get(&c) {
+            indices.push(IndexWithInfo {
+                index: c,
+                index_info: IndexInfo::OuterInfo(outer_info),
+            });
+        } else if let Some(&contracted_info) = contracted_indices.get(&c) {
+            indices.push(IndexWithInfo {
+                index: c,
+                index_info: IndexInfo::ContractedInfo(contracted_info),
+            });
+        } else {
+            panic!();
+        }
+    }
+    indices
+}
+
 pub fn generate_classified_pair_contraction(
     sized_contraction: &SizedContraction,
 ) -> ClassifiedPairContraction {
@@ -267,18 +315,16 @@ pub fn generate_classified_pair_contraction(
 
     assert!(operand_indices.len() == 2);
 
-    let lhs_indices: Vec<char> = operand_indices[0].chars().collect();
-    let rhs_indices: Vec<char> = operand_indices[1].chars().collect();
-    let output_indices = output_indices.clone();
-
     let mut stack_indices = HashMap::new();
     let mut contracted_indices = HashMap::new();
     let mut outer_indices = HashMap::new();
+    let lhs_chars: Vec<char> = operand_indices[0].chars().collect();
+    let rhs_chars: Vec<char> = operand_indices[1].chars().collect();
 
     for (output_position, &c) in output_indices.iter().enumerate() {
         match (
-            lhs_indices.iter().position(|&x| x == c),
-            rhs_indices.iter().position(|&x| x == c),
+            operand_indices[0].chars().position(|x| x == c),
+            operand_indices[1].chars().position(|x| x == c),
         ) {
             (Some(lhs_position), Some(rhs_position)) => {
                 stack_indices.insert(
@@ -314,8 +360,8 @@ pub fn generate_classified_pair_contraction(
 
     for &c in summation_indices.iter() {
         match (
-            lhs_indices.iter().position(|&x| x == c),
-            rhs_indices.iter().position(|&x| x == c),
+            operand_indices[0].chars().position(|x| x == c),
+            operand_indices[1].chars().position(|x| x == c),
         ) {
             (Some(lhs_position), Some(rhs_position)) => {
                 contracted_indices.insert(
@@ -329,6 +375,10 @@ pub fn generate_classified_pair_contraction(
             (_, _) => panic!(),
         }
     }
+
+    let lhs_indices = generate_info_vector(&lhs_chars, &stack_indices, &outer_indices, &contracted_indices);
+    let rhs_indices = generate_info_vector(&rhs_chars, &stack_indices, &outer_indices, &contracted_indices);
+    let output_indices = generate_info_vector(&output_indices, &stack_indices, &outer_indices, &contracted_indices);
 
     assert_eq!(
         output_indices.len(),
@@ -663,8 +713,8 @@ where
 }
 
 fn tensordot_fixed_order<A, S, S2, D, E>(
-    t1: &ArrayBase<S, D>,
-    t2: &ArrayBase<S2, E>,
+    lhs: &ArrayBase<S, D>,
+    rhs: &ArrayBase<S2, E>,
     last_n: usize,
 ) -> ArrayD<A>
 where
@@ -675,41 +725,41 @@ where
     E: Dimension,
 {
     // Returns an n-dimensional array where n = |D| + |E| - 2 * last_n.
-    // The shape will be (...t1.shape(:-last_n), ...t2.shape(last_n:))
-    // i.e. if t1.shape = (3,4,5), t2.shape = (4,5,6), and last_n=2,
+    // The shape will be (...lhs.shape(:-last_n), ...rhs.shape(last_n:))
+    // i.e. if lhs.shape = (3,4,5), rhs.shape = (4,5,6), and last_n=2,
     // the returned array will have shape (3,6).
     //
     // Basically you reshape each one into a 2-D matrix (no matter what
     // the starting size was) and then do a matrix multiplication
-    let mut len_uncontracted_t1 = 1;
-    let mut len_uncontracted_t2 = 1;
-    let mut len_contracted_t1 = 1;
-    let mut len_contracted_t2 = 1;
+    let mut len_uncontracted_lhs = 1;
+    let mut len_uncontracted_rhs = 1;
+    let mut len_contracted_lhs = 1;
+    let mut len_contracted_rhs = 1;
     let mut output_shape = Vec::<usize>::new();
-    let num_axes_t1 = t1.ndim();
-    for (axis, &axis_length) in t1.shape().iter().enumerate() {
-        if axis < (num_axes_t1 - last_n) {
-            len_uncontracted_t1 *= axis_length;
+    let num_axes_lhs = lhs.ndim();
+    for (axis, &axis_length) in lhs.shape().iter().enumerate() {
+        if axis < (num_axes_lhs - last_n) {
+            len_uncontracted_lhs *= axis_length;
             output_shape.push(axis_length);
         } else {
-            len_contracted_t1 *= axis_length;
+            len_contracted_lhs *= axis_length;
         }
     }
-    for (axis, &axis_length) in t2.shape().iter().enumerate() {
+    for (axis, &axis_length) in rhs.shape().iter().enumerate() {
         if axis < last_n {
-            len_contracted_t2 *= axis_length;
+            len_contracted_rhs *= axis_length;
         } else {
-            len_uncontracted_t2 *= axis_length;
+            len_uncontracted_rhs *= axis_length;
             output_shape.push(axis_length);
         }
     }
-    let matrix1 = Array::from_shape_vec(t1.raw_dim(), t1.iter().cloned().collect())
+    let matrix1 = Array::from_shape_vec(lhs.raw_dim(), lhs.iter().cloned().collect())
         .unwrap()
-        .into_shape((len_uncontracted_t1, len_contracted_t1))
+        .into_shape((len_uncontracted_lhs, len_contracted_lhs))
         .unwrap();
-    let matrix2 = Array::from_shape_vec(t2.raw_dim(), t2.iter().cloned().collect())
+    let matrix2 = Array::from_shape_vec(rhs.raw_dim(), rhs.iter().cloned().collect())
         .unwrap()
-        .into_shape((len_contracted_t2, len_uncontracted_t2))
+        .into_shape((len_contracted_rhs, len_uncontracted_rhs))
         .unwrap();
 
     matrix1
@@ -719,10 +769,10 @@ where
 }
 
 pub fn tensordot<A, S, S2, D, E>(
-    t1: &ArrayBase<S, D>,
-    t2: &ArrayBase<S2, E>,
-    t1_axes: &[Axis],
-    t2_axes: &[Axis],
+    lhs: &ArrayBase<S, D>,
+    rhs: &ArrayBase<S2, E>,
+    lhs_axes: &[Axis],
+    rhs_axes: &[Axis],
 ) -> ArrayD<A>
 where
     A: ndarray::LinalgScalar,
@@ -731,44 +781,44 @@ where
     D: Dimension,
     E: Dimension,
 {
-    let num_axes = t1_axes.len();
-    assert!(num_axes == t2_axes.len());
-    let mut t1_startpositions: Vec<_> = t1_axes.iter().map(|x| x.index()).collect();
-    let mut t2_startpositions: Vec<_> = t2_axes.iter().map(|x| x.index()).collect();
+    let num_axes = lhs_axes.len();
+    assert!(num_axes == rhs_axes.len());
+    let mut lhs_startpositions: Vec<_> = lhs_axes.iter().map(|x| x.index()).collect();
+    let mut rhs_startpositions: Vec<_> = rhs_axes.iter().map(|x| x.index()).collect();
 
     // Probably a better way to do this...
-    let t1_uniques: HashSet<_> = t1_startpositions.iter().cloned().collect();
-    let t2_uniques: HashSet<_> = t2_startpositions.iter().cloned().collect();
-    assert!(num_axes == t1_uniques.len());
-    assert!(num_axes == t2_uniques.len());
+    let lhs_uniques: HashSet<_> = lhs_startpositions.iter().cloned().collect();
+    let rhs_uniques: HashSet<_> = rhs_startpositions.iter().cloned().collect();
+    assert!(num_axes == lhs_uniques.len());
+    assert!(num_axes == rhs_uniques.len());
 
-    // Rolls the axes specified in t1 and t2 to the back and front respectively,
-    // then calls tensordot_fixed_order(rolled_t1, rolled_t2, t1_axes.len())
-    let mut permutation_t1 = Vec::new();
-    for i in 0..(t1.ndim()) {
-        if !(t1_uniques.contains(&i)) {
-            permutation_t1.push(i);
+    // Rolls the axes specified in lhs and rhs to the back and front respectively,
+    // then calls tensordot_fixed_order(rolled_lhs, rolled_rhs, lhs_axes.len())
+    let mut permutation_lhs = Vec::new();
+    for i in 0..(lhs.ndim()) {
+        if !(lhs_uniques.contains(&i)) {
+            permutation_lhs.push(i);
         }
     }
-    permutation_t1.append(&mut t1_startpositions);
-    let rolled_t1 = t1.view().into_dyn().permuted_axes(permutation_t1);
+    permutation_lhs.append(&mut lhs_startpositions);
+    let rolled_lhs = lhs.view().into_dyn().permuted_axes(permutation_lhs);
 
-    let mut permutation_t2 = Vec::new();
-    permutation_t2.append(&mut t2_startpositions);
-    for i in 0..(t2.ndim()) {
-        if !(t2_uniques.contains(&i)) {
-            permutation_t2.push(i);
+    let mut permutation_rhs = Vec::new();
+    permutation_rhs.append(&mut rhs_startpositions);
+    for i in 0..(rhs.ndim()) {
+        if !(rhs_uniques.contains(&i)) {
+            permutation_rhs.push(i);
         }
     }
-    let rolled_t2 = t2.view().into_dyn().permuted_axes(permutation_t2);
+    let rolled_rhs = rhs.view().into_dyn().permuted_axes(permutation_rhs);
 
-    tensordot_fixed_order(&rolled_t1, &rolled_t2, t1_axes.len())
+    tensordot_fixed_order(&rolled_lhs, &rolled_rhs, lhs_axes.len())
 }
 
 pub fn einsum_pair_allused_nostacks_classifiedindices<A, S, S2, D, E>(
     classified_pair_contraction: &ClassifiedPairContraction,
-    t1: &ArrayBase<S, D>,
-    t2: &ArrayBase<S2, E>,
+    lhs: &ArrayBase<S, D>,
+    rhs: &ArrayBase<S2, E>,
 ) -> ArrayD<A>
 where
     A: LinalgScalar,
@@ -789,35 +839,43 @@ where
 
     assert!(classified_pair_contraction.stack_indices.len() == 0);
 
-    let mut t1_axes = Vec::new();
-    let mut t2_axes = Vec::new();
+    let mut lhs_axes = Vec::new();
+    let mut rhs_axes = Vec::new();
     for (_, &contracted_index) in classified_pair_contraction.contracted_indices.iter() {
-        t1_axes.push(Axis(contracted_index.lhs_position));
-        t2_axes.push(Axis(contracted_index.rhs_position));
+        lhs_axes.push(Axis(contracted_index.lhs_position));
+        rhs_axes.push(Axis(contracted_index.rhs_position));
     }
 
-    let lhs_only_len = classified_pair_contraction.lhs_indices.len() - t1_axes.len();
-
-    let mut permutation = Vec::new();
-    for c in classified_pair_contraction.output_indices.iter() {
-        match classified_pair_contraction.outer_indices[c].input_position {
-            OuterIndexPosition::LHS(i) => permutation.push(i),
-            OuterIndexPosition::RHS(i) => permutation.push(lhs_only_len + i),
+    let mut both_outer_indices = Vec::new();
+    for idx in classified_pair_contraction.lhs_indices.iter() {
+        if let IndexInfo::OuterInfo(OuterIndex{ input_position: OuterIndexPosition::LHS(_), output_position: _ }) = idx.index_info {
+            both_outer_indices.push(idx.index);
         }
     }
+    for idx in classified_pair_contraction.rhs_indices.iter() {
+        if let IndexInfo::OuterInfo(OuterIndex{ input_position: OuterIndexPosition::RHS(_), output_position: _ }) = idx.index_info {
+            both_outer_indices.push(idx.index);
+        }
+    }
+    let permutation: Vec<usize> = classified_pair_contraction.output_indices.iter().map(
+        |c|
+        both_outer_indices.iter().position(
+            |&x| x == c.index).unwrap()
+        )
+        .collect();
 
     println!("cpc: {:?}", &classified_pair_contraction);
-    println!("t1_axes: {:?}", &t1_axes);
-    println!("t2_axes: {:?}", &t2_axes);
+    println!("lhs_axes: {:?}", &lhs_axes);
+    println!("rhs_axes: {:?}", &rhs_axes);
     println!("final permutation: {:?}", permutation);
 
-    tensordot(t1, t2, &t1_axes, &t2_axes).permuted_axes(permutation)
+    tensordot(lhs, rhs, &lhs_axes, &rhs_axes).permuted_axes(permutation)
 }
 
 pub fn einsum_pair_allused_nostacks<A, S, S2, D, E>(
     sized_contraction: &SizedContraction,
-    t1: &ArrayBase<S, D>,
-    t2: &ArrayBase<S2, E>,
+    lhs: &ArrayBase<S, D>,
+    rhs: &ArrayBase<S2, E>,
 ) -> ArrayD<A>
 where
     A: LinalgScalar,
@@ -827,7 +885,7 @@ where
     E: Dimension,
 {
     let cpc = generate_classified_pair_contraction(sized_contraction);
-    einsum_pair_allused_nostacks_classifiedindices(&cpc, t1, t2)
+    einsum_pair_allused_nostacks_classifiedindices(&cpc, lhs, rhs)
 }
 
 //////// Versions that accept strings for WASM interop below here ////
