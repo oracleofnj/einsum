@@ -131,10 +131,6 @@ fn it_collapses_a_singleton_with_a_repeat_that_gets_summed() {
 
     let sc = validate_and_size("iij->j", &[&s]).unwrap();
     let collapsed = einsum_singleton(&sc, &s);
-    println!("{:?}", s);
-    println!("{:?}", collapsed);
-    println!("{:?}", correct_answer);
-
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
 
@@ -156,10 +152,6 @@ fn it_collapses_a_singleton_with_multiple_repeats_that_get_summed() {
 
     let sc = validate_and_size("iijkk->j", &[&s]).unwrap();
     let collapsed = einsum_singleton(&sc, &s);
-    println!("{:?}", s);
-    println!("{:?}", collapsed);
-    println!("{:?}", correct_answer);
-
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
 
@@ -182,10 +174,6 @@ fn it_collapses_a_singleton_with_multiple_sums() {
 
     let sc = validate_and_size("ijk->k", &[&s]).unwrap();
     let collapsed = einsum_singleton(&sc, &s);
-    println!("{:?}", s);
-    println!("{:?}", collapsed);
-    println!("{:?}", correct_answer);
-
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
 
