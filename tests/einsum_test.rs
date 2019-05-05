@@ -1,4 +1,3 @@
-#![feature(test)]
 use einsum::*;
 use ndarray::prelude::*;
 use ndarray_rand::RandomExt;
@@ -115,6 +114,80 @@ fn it_collapses_a_singleton_with_multiple_repeats() {
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
 
+
+#[test]
+fn it_collapses_a_singleton_with_a_repeat_that_gets_summed() {
+    // iij->j
+    let s = rand_array((2, 2, 3));
+
+    let mut correct_answer: Array1<f64> = Array::zeros((3,));
+    for j in 0..3 {
+        let mut res = 0.;
+        for i in 0..2 {
+            res += s[[i, i, j]];
+        }
+        correct_answer[j] = res;
+    }
+
+    let sc = validate_and_size("iij->j", &[&s]).unwrap();
+    let collapsed = einsum_singleton(&sc, &s);
+    println!("{:?}", s);
+    println!("{:?}", collapsed);
+    println!("{:?}", correct_answer);
+
+    assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
+}
+
+#[test]
+fn it_collapses_a_singleton_with_multiple_repeats_that_get_summed() {
+    // iijkk->j
+    let s = rand_array((2, 2, 3, 4, 4));
+
+    let mut correct_answer: Array1<f64> = Array::zeros((3,));
+    for j in 0..3 {
+        let mut res = 0.;
+        for i in 0..2 {
+            for k in 0..4 {
+                res += s[[i, i, j, k, k]];
+            }
+        }
+        correct_answer[j] = res;
+    }
+
+    let sc = validate_and_size("iijkk->j", &[&s]).unwrap();
+    let collapsed = einsum_singleton(&sc, &s);
+    println!("{:?}", s);
+    println!("{:?}", collapsed);
+    println!("{:?}", correct_answer);
+
+    assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
+}
+
+
+#[test]
+fn it_collapses_a_singleton_with_multiple_sums() {
+    // ijk->k
+    let s = rand_array((2, 3, 4));
+
+    let mut correct_answer: Array1<f64> = Array::zeros((4,));
+    for k in 0..4 {
+        let mut res = 0.;
+        for i in 0..2 {
+            for j in 0..3 {
+                res += s[[i, j, k]];
+            }
+        }
+        correct_answer[k] = res;
+    }
+
+    let sc = validate_and_size("ijk->k", &[&s]).unwrap();
+    let collapsed = einsum_singleton(&sc, &s);
+    println!("{:?}", s);
+    println!("{:?}", collapsed);
+    println!("{:?}", correct_answer);
+
+    assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
+}
 
 #[test]
 fn it_collapses_a_singleton() {

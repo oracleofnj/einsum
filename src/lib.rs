@@ -1,4 +1,4 @@
-#![feature(custom_attribute)]
+// #![feature(custom_attribute)]
 // Copyright 2019 Jared Samet
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -44,7 +44,49 @@ pub struct SizedContraction {
     output_size: OutputSize,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
+pub struct UntouchedIndex {
+    position: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct DiagonalizedIndex {
+    positions: Vec<usize>,
+}
+
+#[derive(Clone, Debug)]
+pub struct SummedIndex {
+    positions: Vec<usize>,
+}
+
+// TODO: Replace the chars here with usizes and the HashMaps with vecs
+#[derive(Debug)]
+pub enum SingletonIndexInfo {
+    UntouchedInfo(UntouchedIndex),
+    DiagonalizedInfo(DiagonalizedIndex),
+    SummedInfo(SummedIndex),
+}
+
+#[derive(Debug)]
+pub struct IndexWithSingletonInfo {
+    index: char,
+    index_info: SingletonIndexInfo,
+}
+
+type UntouchedIndexMap = HashMap<char, UntouchedIndex>;
+type DiagonalizedIndexMap = HashMap<char, DiagonalizedIndex>;
+type SummedIndexMap = HashMap<char, SummedIndex>;
+
+#[derive(Debug)]
+pub struct ClassifiedSingletonContraction {
+    input_indices: Vec<IndexWithPairInfo>,
+    output_indices: Vec<IndexWithPairInfo>,
+    untouched_indices: UntouchedIndexMap,
+    diagonalized_indices: DiagonalizedIndexMap,
+    summed_indices: SummedIndexMap,
+}
+
+#[derive(Clone, Debug)]
 pub struct StackIndex {
     // Which dimension of the LHS tensor does this index correspond to
     lhs_position: usize,
@@ -54,7 +96,7 @@ pub struct StackIndex {
     output_position: usize,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct ContractedIndex {
     // Which dimension of the LHS tensor does this index correspond to
     lhs_position: usize,
@@ -62,13 +104,13 @@ pub struct ContractedIndex {
     rhs_position: usize,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub enum OuterIndexPosition {
     LHS(usize),
     RHS(usize),
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct OuterIndex {
     // Which dimension of the input tensor does this index correspond to
     input_position: OuterIndexPosition,
@@ -77,18 +119,17 @@ pub struct OuterIndex {
 }
 
 // TODO: Replace the chars here with usizes and the HashMaps with vecs
-
-#[derive(Copy, Clone, Debug)]
-pub enum IndexInfo {
+#[derive(Debug)]
+pub enum PairIndexInfo {
     StackInfo(StackIndex),
     ContractedInfo(ContractedIndex),
     OuterInfo(OuterIndex),
 }
 
-#[derive(Copy, Clone, Debug)]
-pub struct IndexWithInfo {
+#[derive(Debug)]
+pub struct IndexWithPairInfo {
     index: char,
-    index_info: IndexInfo,
+    index_info: PairIndexInfo,
 }
 
 type StackIndexMap = HashMap<char, StackIndex>;
@@ -97,9 +138,9 @@ type OuterIndexMap = HashMap<char, OuterIndex>;
 
 #[derive(Debug)]
 pub struct ClassifiedPairContraction {
-    lhs_indices: Vec<IndexWithInfo>,
-    rhs_indices: Vec<IndexWithInfo>,
-    output_indices: Vec<IndexWithInfo>,
+    lhs_indices: Vec<IndexWithPairInfo>,
+    rhs_indices: Vec<IndexWithPairInfo>,
+    output_indices: Vec<IndexWithPairInfo>,
     stack_indices: StackIndexMap,
     contracted_indices: ContractedIndexMap,
     outer_indices: OuterIndexMap,
@@ -279,23 +320,23 @@ fn generate_info_vector(
     stack_indices: &StackIndexMap,
     outer_indices: &OuterIndexMap,
     contracted_indices: &ContractedIndexMap,
-) -> Vec<IndexWithInfo> {
+) -> Vec<IndexWithPairInfo> {
     let mut indices = Vec::new();
     for &c in operand_indices {
-        if let Some(&stack_info) = stack_indices.get(&c) {
-            indices.push(IndexWithInfo {
+        if let Some(stack_info) = stack_indices.get(&c) {
+            indices.push(IndexWithPairInfo {
                 index: c,
-                index_info: IndexInfo::StackInfo(stack_info),
+                index_info: PairIndexInfo::StackInfo(stack_info.clone()),
             });
-        } else if let Some(&outer_info) = outer_indices.get(&c) {
-            indices.push(IndexWithInfo {
+        } else if let Some(outer_info) = outer_indices.get(&c) {
+            indices.push(IndexWithPairInfo {
                 index: c,
-                index_info: IndexInfo::OuterInfo(outer_info),
+                index_info: PairIndexInfo::OuterInfo(outer_info.clone()),
             });
-        } else if let Some(&contracted_info) = contracted_indices.get(&c) {
-            indices.push(IndexWithInfo {
+        } else if let Some(contracted_info) = contracted_indices.get(&c) {
+            indices.push(IndexWithPairInfo {
                 index: c,
-                index_info: IndexInfo::ContractedInfo(contracted_info),
+                index_info: PairIndexInfo::ContractedInfo(contracted_info.clone()),
             });
         } else {
             panic!();
@@ -376,9 +417,24 @@ pub fn generate_classified_pair_contraction(
         }
     }
 
-    let lhs_indices = generate_info_vector(&lhs_chars, &stack_indices, &outer_indices, &contracted_indices);
-    let rhs_indices = generate_info_vector(&rhs_chars, &stack_indices, &outer_indices, &contracted_indices);
-    let output_indices = generate_info_vector(&output_indices, &stack_indices, &outer_indices, &contracted_indices);
+    let lhs_indices = generate_info_vector(
+        &lhs_chars,
+        &stack_indices,
+        &outer_indices,
+        &contracted_indices,
+    );
+    let rhs_indices = generate_info_vector(
+        &rhs_chars,
+        &stack_indices,
+        &outer_indices,
+        &contracted_indices,
+    );
+    let output_indices = generate_info_vector(
+        &output_indices,
+        &stack_indices,
+        &outer_indices,
+        &contracted_indices,
+    );
 
     assert_eq!(
         output_indices.len(),
@@ -841,27 +897,39 @@ where
 
     let mut lhs_axes = Vec::new();
     let mut rhs_axes = Vec::new();
-    for (_, &contracted_index) in classified_pair_contraction.contracted_indices.iter() {
+    for (_, contracted_index) in classified_pair_contraction.contracted_indices.iter() {
         lhs_axes.push(Axis(contracted_index.lhs_position));
         rhs_axes.push(Axis(contracted_index.rhs_position));
     }
 
     let mut both_outer_indices = Vec::new();
     for idx in classified_pair_contraction.lhs_indices.iter() {
-        if let IndexInfo::OuterInfo(OuterIndex{ input_position: OuterIndexPosition::LHS(_), output_position: _ }) = idx.index_info {
+        if let PairIndexInfo::OuterInfo(OuterIndex {
+            input_position: OuterIndexPosition::LHS(_),
+            output_position: _,
+        }) = idx.index_info
+        {
             both_outer_indices.push(idx.index);
         }
     }
     for idx in classified_pair_contraction.rhs_indices.iter() {
-        if let IndexInfo::OuterInfo(OuterIndex{ input_position: OuterIndexPosition::RHS(_), output_position: _ }) = idx.index_info {
+        if let PairIndexInfo::OuterInfo(OuterIndex {
+            input_position: OuterIndexPosition::RHS(_),
+            output_position: _,
+        }) = idx.index_info
+        {
             both_outer_indices.push(idx.index);
         }
     }
-    let permutation: Vec<usize> = classified_pair_contraction.output_indices.iter().map(
-        |c|
-        both_outer_indices.iter().position(
-            |&x| x == c.index).unwrap()
-        )
+    let permutation: Vec<usize> = classified_pair_contraction
+        .output_indices
+        .iter()
+        .map(|c| {
+            both_outer_indices
+                .iter()
+                .position(|&x| x == c.index)
+                .unwrap()
+        })
         .collect();
 
     println!("cpc: {:?}", &classified_pair_contraction);
