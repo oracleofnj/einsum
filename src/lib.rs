@@ -139,7 +139,7 @@ type ContractedIndexMap = HashMap<char, ContractedIndex>;
 type OuterIndexMap = HashMap<char, OuterIndex>;
 
 #[derive(Debug)]
-pub struct ClassifiedPairContraction {
+pub struct ClassifiedDedupedPairContraction {
     lhs_indices: Vec<IndexWithPairInfo>,
     rhs_indices: Vec<IndexWithPairInfo>,
     output_indices: Vec<IndexWithPairInfo>,
@@ -464,7 +464,7 @@ fn generate_info_vector_for_pair(
 
 pub fn generate_classified_pair_contraction(
     sized_contraction: &SizedContraction,
-) -> ClassifiedPairContraction {
+) -> ClassifiedDedupedPairContraction {
     let Contraction {
         ref operand_indices,
         ref output_indices,
@@ -559,7 +559,7 @@ pub fn generate_classified_pair_contraction(
     );
     assert_eq!(summation_indices.len(), contracted_indices.len());
 
-    ClassifiedPairContraction {
+    ClassifiedDedupedPairContraction {
         lhs_indices,
         rhs_indices,
         output_indices,
@@ -868,8 +868,8 @@ where
     tensordot_fixed_order(&rolled_lhs, &rolled_rhs, lhs_axes.len())
 }
 
-pub fn einsum_pair_allused_nostacks_classifiedindices<A, S, S2, D, E>(
-    classified_pair_contraction: &ClassifiedPairContraction,
+fn einsum_pair_allused_nostacks_classified_deduped_indices<A, S, S2, D, E>(
+    classified_pair_contraction: &ClassifiedDedupedPairContraction,
     lhs: &ArrayBase<S, D>,
     rhs: &ArrayBase<S2, E>,
 ) -> ArrayD<A>
@@ -880,7 +880,8 @@ where
     D: Dimension,
     E: Dimension,
 {
-    // Handles just the case where it's like abc,bce->ae
+    // Allowed: abc,bce->ae
+    // Not allowed: abc,acd -> abd [a in lhs, rhs, and output]
     // Not allowed: abc,bcde -> ae [no d in output]
     // Not allowed: abbc,bce -> ae [repeated b in input]
     // In other words: each index of each tensor is unique,
@@ -890,7 +891,7 @@ where
     // Otherwise, it's in the output and we need to permute into the correct order
     // afterwards
 
-    assert!(classified_pair_contraction.stack_indices.len() == 0);
+    assert_eq!(classified_pair_contraction.stack_indices.len(), 0);
 
     let mut lhs_axes = Vec::new();
     let mut rhs_axes = Vec::new();
@@ -932,6 +933,161 @@ where
     tensordot(lhs, rhs, &lhs_axes, &rhs_axes).permuted_axes(permutation)
 }
 
+pub fn move_stack_indices_to_front<A, S, D>(
+    input_indices: &[IndexWithPairInfo],
+    tensor: &ArrayBase<S, D>,
+) -> ArrayD<A>
+where
+    A: LinalgScalar,
+    S: Data<Elem = A>,
+    D: Dimension,
+{
+    let mut new_order = Vec::new();
+    let mut unstacked_order = Vec::new();
+    let mut stacked_length = 1;
+    let mut unstack_shapes = Vec::new();
+    for (i, (idx, &axis_length)) in input_indices.iter().zip(tensor.shape().iter()).enumerate() {
+        if let PairIndexInfo::StackInfo(_) = idx.index_info {
+            new_order.push(i);
+            stacked_length *= axis_length;
+        } else {
+            unstacked_order.push(i);
+            unstack_shapes.push(axis_length);
+        }
+    }
+    new_order.append(&mut unstacked_order);
+    let mut output_shape = Vec::new();
+    output_shape.push(stacked_length);
+    output_shape.append(&mut unstack_shapes);
+
+    let mut permutation = Vec::new();
+    for i in 0..(tensor.ndim()) {
+        let pos = new_order.iter().position(|&x| x == i).unwrap();
+        permutation.push(pos);
+    }
+
+    tensor
+        .view()
+        .into_dyn()
+        .into_owned()
+        .permuted_axes(permutation)
+        .into_shape(IxDyn(&output_shape))
+        .unwrap()
+}
+
+pub fn einsum_pair_allused_classified_deduped_indices<A, S, S2, D, E>(
+    classified_pair_contraction: &ClassifiedDedupedPairContraction,
+    lhs: &ArrayBase<S, D>,
+    rhs: &ArrayBase<S2, E>,
+) -> ArrayD<A>
+where
+    A: LinalgScalar,
+    S: Data<Elem = A>,
+    S2: Data<Elem = A>,
+    D: Dimension,
+    E: Dimension,
+{
+    // Allowed: abc,bce->ae
+    // Allowed: abc,acd -> abd [a in lhs, rhs, and output]
+    // Not allowed: abc,bcde -> ae [no d in output]
+    // Not allowed: abbc,bce -> ae [repeated b in input]
+    // In other words: each index of each tensor is unique,
+    // and is either in the other tensor or in the output
+
+    if classified_pair_contraction.stack_indices.len() == 0 {
+        einsum_pair_allused_nostacks_classified_deduped_indices(
+            classified_pair_contraction,
+            lhs,
+            rhs,
+        )
+    } else {
+        // What do we have to do?
+        // (1) Permute the stack indices to the front of LHS and RHS and
+        //     Reshape into (N, ...non-stacked LHS shape), (N, ...non-stacked RHS shape)
+        let lhs_reshaped = move_stack_indices_to_front(
+            &classified_pair_contraction.lhs_indices,
+            &lhs
+        );
+        let rhs_reshaped = move_stack_indices_to_front(
+            &classified_pair_contraction.rhs_indices,
+            &rhs
+        );
+
+        // (2) Construct the non-stacked ClassifiedDedupedPairContraction
+        let unstacked_stack_indices = StackIndexMap::new();
+        let mut unstacked_lhs_chars = Vec::new();
+        let mut unstacked_rhs_chars = Vec::new();
+        let mut unstacked_output_chars = Vec::new();
+        for idx in classified_pair_contraction.lhs_indices.iter() {
+            if let PairIndexInfo::StackInfo(_) = idx.index_info {
+            } else {
+                unstacked_lhs_chars.push(idx.index);
+            }
+        }
+        for idx in classified_pair_contraction.rhs_indices.iter() {
+            if let PairIndexInfo::StackInfo(_) = idx.index_info {
+            } else {
+                unstacked_rhs_chars.push(idx.index);
+            }
+        }
+        for idx in classified_pair_contraction.output_indices.iter() {
+            if let PairIndexInfo::StackInfo(_) = idx.index_info {
+            } else {
+                unstacked_output_chars.push(idx.index);
+            }
+        }
+        // new_cdpc = ClassifiedDedupedPairContraction{
+        //     let lhs_indices = generate_info_vector_for_pair(
+        //         &unstacked_lhs_chars,
+        //         &unstacked_lhs_chars,
+        //         &classified_pair_contraction.outer_indices,
+        //         &contracted_indices,
+        //     );
+        //     let rhs_indices = generate_info_vector_for_pair(
+        //         &rhs_chars,
+        //         &stack_indices,
+        //         &outer_indices,
+        //         &contracted_indices,
+        //     );
+        //     let output_indices = generate_info_vector_for_pair(
+        //         &output_indices,
+        //         &stack_indices,
+        //         &outer_indices,
+        //         &contracted_indices,
+        //     );
+        //
+        //     assert_eq!(
+        //         output_indices.len(),
+        //         stack_indices.len() + outer_indices.len()
+        //     );
+        //     assert_eq!(summation_indices.len(), contracted_indices.len());
+        //
+        //     ClassifiedDedupedPairContraction {
+        //         generate_info_vector_for_pair(
+        //             &lhs_unstacked_chars,
+        //             &stack_indices,
+        //             &outer_indices,
+        //             &contracted_indices,
+        //         ),
+        //         rhs_indices,
+        //         output_indices,
+        //         stack_indices,
+        //         contracted_indices,
+        //         outer_indices,
+        //     }
+        // }
+
+        // (3) Make unshaped_result = an ArrayD of shape (N, ...non-stacked output shape)
+        // (4) for i = 0..N, assign the result of einsum_pair_allused_nostacks_classified_deduped_indices
+        //     to unshaped_result[i]
+        // (5) Reshape into (...stacked indices, ...non-stacked output shape)
+        // (6) Permute into correct order
+
+        lhs.view().into_dyn().into_owned()
+    }
+
+}
+
 pub fn einsum_pair_allused_nostacks<A, S, S2, D, E>(
     sized_contraction: &SizedContraction,
     lhs: &ArrayBase<S, D>,
@@ -945,7 +1101,7 @@ where
     E: Dimension,
 {
     let cpc = generate_classified_pair_contraction(sized_contraction);
-    einsum_pair_allused_nostacks_classifiedindices(&cpc, lhs, rhs)
+    einsum_pair_allused_nostacks_classified_deduped_indices(&cpc, lhs, rhs)
 }
 
 //////// Slow stuff below here ////////
