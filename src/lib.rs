@@ -933,10 +933,9 @@ where
     tensordot(lhs, rhs, &lhs_axes, &rhs_axes).permuted_axes(permutation)
 }
 
-// Gaaaaah this is wrong because the stack indices need to get moved to the front in a particular order
-// TODO: Fix this
 pub fn move_stack_indices_to_front<A, S, D>(
     input_indices: &[IndexWithPairInfo],
+    stack_index_order: &[char],
     tensor: &ArrayBase<S, D>,
 ) -> ArrayD<A>
 where
@@ -944,40 +943,33 @@ where
     S: Data<Elem = A>,
     D: Dimension,
 {
-    let mut new_order = Vec::new();
-    let mut unstacked_order = Vec::new();
-    let mut stacked_length = 1;
-    let mut unstack_shapes = Vec::new();
+    let mut permutation: Vec<usize> = Vec::new();
+    let mut output_shape: Vec<usize> = Vec::new();
+    output_shape.push(1);
+
+    for &c in stack_index_order {
+        permutation.push(input_indices.iter().position(|idx| idx.index == c).unwrap());
+    }
+
     for (i, (idx, &axis_length)) in input_indices.iter().zip(tensor.shape().iter()).enumerate() {
         if let PairIndexInfo::StackInfo(_) = idx.index_info {
-            new_order.push(i);
-            stacked_length *= axis_length;
+            output_shape[0] *= axis_length;
         } else {
-            unstacked_order.push(i);
-            unstack_shapes.push(axis_length);
+            permutation.push(i);
+            output_shape.push(axis_length);
         }
     }
-    new_order.append(&mut unstacked_order);
-    let mut output_shape = Vec::new();
-    output_shape.push(stacked_length);
-    output_shape.append(&mut unstack_shapes);
 
-    let mut permutation = Vec::new();
-    for i in 0..(tensor.ndim()) {
-        let pos = new_order.iter().position(|&x| x == i).unwrap();
-        permutation.push(pos);
-    }
+    let temp_result = tensor.view().into_dyn().into_owned().permuted_axes(permutation);
 
-    tensor
-        .view()
-        .into_dyn()
-        .into_owned()
-        .permuted_axes(permutation)
-        .into_shape(IxDyn(&output_shape))
-        .unwrap()
+    Array::from_shape_vec(
+        IxDyn(&output_shape),
+        temp_result.iter().cloned().collect(),
+    )
+    .unwrap()
 }
 
-pub fn einsum_pair_allused_classified_deduped_indices<A, S, S2, D, E>(
+pub fn einsum_pair_allused_deduped_indices<A, S, S2, D, E>(
     sized_contraction: &SizedContraction,
     lhs: &ArrayBase<S, D>,
     rhs: &ArrayBase<S2, E>,
@@ -1004,8 +996,14 @@ where
         // What do we have to do?
         // (1) Permute the stack indices to the front of LHS and RHS and
         //     Reshape into (N, ...non-stacked LHS shape), (N, ...non-stacked RHS shape)
-        let lhs_reshaped = move_stack_indices_to_front(&cpc.lhs_indices, &lhs);
-        let rhs_reshaped = move_stack_indices_to_front(&cpc.rhs_indices, &rhs);
+        let mut stack_index_order = Vec::new();
+        for idx in cpc.output_indices.iter() {
+            if let PairIndexInfo::StackInfo(_) = idx.index_info {
+                stack_index_order.push(idx.index);
+            }
+        }
+        let lhs_reshaped = move_stack_indices_to_front(&cpc.lhs_indices, &stack_index_order, &lhs);
+        let rhs_reshaped = move_stack_indices_to_front(&cpc.rhs_indices, &stack_index_order, &rhs);
 
         // (2) Construct the non-stacked ClassifiedDedupedPairContraction
         let mut unstacked_lhs_chars = Vec::new();
@@ -1067,17 +1065,47 @@ where
         let slice_views: Vec<_> = slices.iter().map(|s| s.view()).collect();
 
         // (5) Reshape into (...stacked indices, ...non-stacked output shape)
-        let mut result = ndarray::stack(Axis(0), &slice_views).unwrap();
-        let output_shape: Vec<usize> = sized_contraction
-            .contraction
+        let temp_result = ndarray::stack(Axis(0), &slice_views).unwrap();
+        let mut temp_shape: Vec<usize> = Vec::new();
+        let mut temp_indices: Vec<char> = Vec::new();
+        for (idx, c) in cpc
             .output_indices
             .iter()
-            .map(|c| sized_contraction.output_size[&c])
-            .collect();
+            .zip(sized_contraction.contraction.output_indices.iter())
+        {
+            if let PairIndexInfo::StackInfo(_) = idx.index_info {
+                temp_shape.push(sized_contraction.output_size[c]);
+                temp_indices.push(*c);
+            }
+        }
+        for (idx, c) in cpc
+            .output_indices
+            .iter()
+            .zip(sized_contraction.contraction.output_indices.iter())
+        {
+            if let PairIndexInfo::StackInfo(_) = idx.index_info {
+            } else {
+                temp_shape.push(sized_contraction.output_size[c]);
+                temp_indices.push(*c);
+            }
+        }
+        let mut permutation: Vec<usize> = Vec::new();
+        for &c in temp_indices.iter() {
+            permutation.push(
+                sized_contraction
+                    .contraction
+                    .output_indices
+                    .iter()
+                    .position(|&x| x == c)
+                    .unwrap(),
+            );
+        }
 
         // (6) Permute into correct order
-
-        lhs.view().into_dyn().into_owned()
+        temp_result
+            .into_shape(IxDyn(&temp_shape))
+            .unwrap()
+            .permuted_axes(permutation)
     }
 
 }

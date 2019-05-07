@@ -229,18 +229,29 @@ fn tensordot_handles_degenerate_both() {
 }
 
 #[test]
-fn nostacks_handles_dot_product() {
+fn deduped_handles_dot_product() {
     let lhs = rand_array((3,));
     let rhs = rand_array((3,));
 
     let correct_answer = arr0(lhs.dot(&rhs));
     let sc = validate_and_size("i,i->", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair_allused_nostacks(&sc, &lhs, &rhs);
+    let dotted = einsum_pair_allused_deduped_indices(&sc, &lhs, &rhs);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
 #[test]
-fn nostacks_handles_outer_product_vec_vec() {
+fn deduped_handles_hadamard_product() {
+    let lhs = rand_array((3,));
+    let rhs = rand_array((3,));
+
+    let correct_answer = (&lhs * &rhs).into_dyn();
+    let sc = validate_and_size("i,i->i", &[&lhs, &rhs]).unwrap();
+    let dotted = einsum_pair_allused_deduped_indices(&sc, &lhs, &rhs);
+    assert!(correct_answer.all_close(&dotted, TOL));
+}
+
+#[test]
+fn deduped_handles_outer_product_vec_vec() {
     let lhs = rand_array((3,));
     let rhs = rand_array((4,));
 
@@ -252,12 +263,12 @@ fn nostacks_handles_outer_product_vec_vec() {
     }
 
     let sc = validate_and_size("i,j->ij", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair_allused_nostacks(&sc, &lhs, &rhs);
+    let dotted = einsum_pair_allused_deduped_indices(&sc, &lhs, &rhs);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
 #[test]
-fn nostacks_handles_matrix_vector_1() {
+fn deduped_handles_matrix_vector_1() {
     let lhs = rand_array((3, 4));
     let rhs = rand_array((4,));
 
@@ -271,13 +282,13 @@ fn nostacks_handles_matrix_vector_1() {
     }
 
     let sc = validate_and_size("ij,j->i", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair_allused_nostacks(&sc, &lhs, &rhs);
+    let dotted = einsum_pair_allused_deduped_indices(&sc, &lhs, &rhs);
     assert!(correct_answer.all_close(&dotted, TOL));
     assert!(correct_answer.all_close(&(lhs.dot(&rhs)), TOL));
 }
 
 #[test]
-fn nostacks_handles_matrix_vector_2() {
+fn deduped_handles_matrix_vector_2() {
     let lhs = rand_array((3,));
     let rhs = rand_array((3, 4));
 
@@ -291,13 +302,13 @@ fn nostacks_handles_matrix_vector_2() {
     }
 
     let sc = validate_and_size("i,ij->j", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair_allused_nostacks(&sc, &lhs, &rhs);
+    let dotted = einsum_pair_allused_deduped_indices(&sc, &lhs, &rhs);
     assert!(correct_answer.all_close(&dotted, TOL));
     assert!(correct_answer.all_close(&(lhs.dot(&rhs)), TOL));
 }
 
 #[test]
-fn nostacks_handles_matrix_vector_3() {
+fn deduped_handles_matrix_vector_3() {
     let lhs = rand_array((3, 4));
     let rhs = rand_array((3,));
 
@@ -311,13 +322,13 @@ fn nostacks_handles_matrix_vector_3() {
     }
 
     let sc = validate_and_size("ij,i->j", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair_allused_nostacks(&sc, &lhs, &rhs);
+    let dotted = einsum_pair_allused_deduped_indices(&sc, &lhs, &rhs);
     assert!(correct_answer.all_close(&dotted, TOL));
     assert!(correct_answer.all_close(&(rhs.dot(&lhs)), TOL));
 }
 
 #[test]
-fn nostacks_handles_matrix_vector_4() {
+fn deduped_handles_matrix_vector_4() {
     let lhs = rand_array((4,));
     let rhs = rand_array((3, 4));
 
@@ -331,25 +342,169 @@ fn nostacks_handles_matrix_vector_4() {
     }
 
     let sc = validate_and_size("j,ij->i", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair_allused_nostacks(&sc, &lhs, &rhs);
+    let dotted = einsum_pair_allused_deduped_indices(&sc, &lhs, &rhs);
     assert!(correct_answer.all_close(&dotted, TOL));
     assert!(correct_answer.all_close(&(rhs.dot(&lhs)), TOL));
 }
 
+#[test]
+fn deduped_handles_stacked_scalar_vector_product_1() {
+    let lhs = rand_array((3, 4));
+    let rhs = rand_array((3,));
+
+    let mut correct_answer: Array2<f64> = Array::zeros((3, 4));
+    for i in 0..3 {
+        for j in 0..4 {
+            correct_answer[[i, j]] = lhs[[i, j]] * rhs[[i]];
+        }
+    }
+
+    let sc = validate_and_size("ij,i->ij", &[&lhs, &rhs]).unwrap();
+    let dotted = einsum_pair_allused_deduped_indices(&sc, &lhs, &rhs);
+    assert!(correct_answer.all_close(&dotted, TOL));
+}
 
 #[test]
-fn nostacks_handles_double_dot_product_mat_mat() {
+fn deduped_handles_stacked_scalar_vector_product_2() {
+    let lhs = rand_array((3, 4));
+    let rhs = rand_array((3,));
+
+    let mut correct_answer: Array2<f64> = Array::zeros((4, 3));
+    for i in 0..3 {
+        for j in 0..4 {
+            correct_answer[[j, i]] = lhs[[i, j]] * rhs[[i]];
+        }
+    }
+
+    let sc = validate_and_size("ij,i->ji", &[&lhs, &rhs]).unwrap();
+    let dotted = einsum_pair_allused_deduped_indices(&sc, &lhs, &rhs);
+    assert!(correct_answer.all_close(&dotted, TOL));
+}
+
+#[test]
+fn deduped_handles_stacked_scalar_vector_product_3() {
+    let lhs = rand_array((3,));
+    let rhs = rand_array((4, 3));
+
+    let mut correct_answer: Array2<f64> = Array::zeros((3, 4));
+    for i in 0..3 {
+        for j in 0..4 {
+            correct_answer[[i, j]] = lhs[[i]] * rhs[[j, i]];
+        }
+    }
+
+    let sc = validate_and_size("i,ji->ij", &[&lhs, &rhs]).unwrap();
+    let dotted = einsum_pair_allused_deduped_indices(&sc, &lhs, &rhs);
+    assert!(correct_answer.all_close(&dotted, TOL));
+}
+
+#[test]
+fn deduped_handles_summed_hadamard_product_aka_stacked_1d_tensordot_1() {
+    let lhs = rand_array((3, 4));
+    let rhs = rand_array((3, 4));
+
+    let correct_answer = (&lhs * &rhs).sum_axis(Axis(1));
+
+    let sc = validate_and_size("ij,ij->i", &[&lhs, &rhs]).unwrap();
+    let dotted = einsum_pair_allused_deduped_indices(&sc, &lhs, &rhs);
+    assert!(correct_answer.all_close(&dotted, TOL));
+}
+
+#[test]
+fn deduped_handles_summed_hadamard_product_aka_stacked_1d_tensordot_2() {
+    let lhs = rand_array((3, 4));
+    let rhs = rand_array((4, 3));
+
+    let correct_answer = (&lhs * &rhs.t()).sum_axis(Axis(1));
+
+    let sc = validate_and_size("ij,ji->i", &[&lhs, &rhs]).unwrap();
+    let dotted = einsum_pair_allused_deduped_indices(&sc, &lhs, &rhs);
+    assert!(correct_answer.all_close(&dotted, TOL));
+}
+
+#[test]
+fn deduped_handles_summed_hadamard_product_aka_stacked_1d_tensordot_3() {
+    let lhs = rand_array((3, 4));
+    let rhs = rand_array((4, 3));
+
+    let correct_answer = (&lhs * &rhs.t()).sum_axis(Axis(0));
+
+    let sc = validate_and_size("ji,ij->i", &[&lhs, &rhs]).unwrap();
+    let dotted = einsum_pair_allused_deduped_indices(&sc, &lhs, &rhs);
+    assert!(correct_answer.all_close(&dotted, TOL));
+}
+
+#[test]
+fn deduped_handles_summed_hadamard_product_multiple_stacked_axes() {
+    let lhs = rand_array((2, 3, 4, 5));
+    let rhs = rand_array((3, 5, 4, 2));
+
+    let mut correct_answer: Array3<f64> = Array::zeros((4, 3, 2));
+    for i in 0..2 {
+        for j in 0..3 {
+            for k in 0..4 {
+                for l in 0..5 {
+                    correct_answer[[k, j, i]] += lhs[[i, j, k, l]] * rhs[[j, l, k, i]];
+                }
+            }
+        }
+    }
+
+    let sc = validate_and_size("ijkl,jlki->kji", &[&lhs, &rhs]).unwrap();
+    let dotted = einsum_pair_allused_deduped_indices(&sc, &lhs, &rhs);
+    assert!(correct_answer.all_close(&dotted, TOL));
+}
+
+#[test]
+fn deduped_handles_2d_hadamard_product() {
+    let lhs = rand_array((2, 3));
+    let rhs = rand_array((2, 3));
+
+    let correct_answer = (&lhs * &rhs).into_dyn();
+
+    let sc = validate_and_size("ij,ij->ij", &[&lhs, &rhs]).unwrap();
+    let dotted = einsum_pair_allused_deduped_indices(&sc, &lhs, &rhs);
+    assert!(correct_answer.all_close(&dotted, TOL));
+}
+
+#[test]
+fn deduped_handles_2d_hadamard_product_2() {
+    let lhs = rand_array((2, 3));
+    let rhs = rand_array((2, 3));
+
+    let correct_answer_t = (&lhs * &rhs).into_dyn();
+    let correct_answer = correct_answer_t.t();
+
+    let sc = validate_and_size("ij,ij->ji", &[&lhs, &rhs]).unwrap();
+    let dotted = einsum_pair_allused_deduped_indices(&sc, &lhs, &rhs);
+    assert!(correct_answer.all_close(&dotted, TOL));
+}
+
+#[test]
+fn deduped_handles_2d_hadamard_product_3() {
+    let lhs = rand_array((3, 2));
+    let rhs = rand_array((2, 3));
+
+    let correct_answer = (&lhs.t() * &rhs).into_dyn();
+
+    let sc = validate_and_size("ji,ij->ij", &[&lhs, &rhs]).unwrap();
+    let dotted = einsum_pair_allused_deduped_indices(&sc, &lhs, &rhs);
+    assert!(correct_answer.all_close(&dotted, TOL));
+}
+
+#[test]
+fn deduped_handles_double_dot_product_mat_mat() {
     let lhs = rand_array((2, 3));
     let rhs = rand_array((2, 3));
 
     let correct_answer = arr0((&lhs * &rhs).sum());
     let sc = validate_and_size("ij,ij->", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair_allused_nostacks(&sc, &lhs, &rhs);
+    let dotted = einsum_pair_allused_deduped_indices(&sc, &lhs, &rhs);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
 #[test]
-fn nostacks_handles_outer_product_vect_mat_1() {
+fn deduped_handles_outer_product_vect_mat_1() {
     let lhs = rand_array((2, 3));
     let rhs = rand_array((4,));
 
@@ -362,12 +517,12 @@ fn nostacks_handles_outer_product_vect_mat_1() {
         }
     }
     let sc = validate_and_size("ij,k->kij", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair_allused_nostacks(&sc, &lhs, &rhs);
+    let dotted = einsum_pair_allused_deduped_indices(&sc, &lhs, &rhs);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
 #[test]
-fn nostacks_handles_outer_product_vect_mat_2() {
+fn deduped_handles_outer_product_vect_mat_2() {
     let lhs = rand_array((4,));
     let rhs = rand_array((2, 3));
 
@@ -380,12 +535,12 @@ fn nostacks_handles_outer_product_vect_mat_2() {
         }
     }
     let sc = validate_and_size("k,ij->kij", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair_allused_nostacks(&sc, &lhs, &rhs);
+    let dotted = einsum_pair_allused_deduped_indices(&sc, &lhs, &rhs);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
 #[test]
-fn nostacks_handles_outer_product_mat_mat() {
+fn deduped_handles_outer_product_mat_mat() {
     let lhs = rand_array((5, 4));
     let rhs = rand_array((2, 3));
 
@@ -400,29 +555,48 @@ fn nostacks_handles_outer_product_mat_mat() {
         }
     }
     let sc = validate_and_size("lk,ij->kilj", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair_allused_nostacks(&sc, &lhs, &rhs);
+    let dotted = einsum_pair_allused_deduped_indices(&sc, &lhs, &rhs);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
 
 #[test]
-fn nostacks_handles_matrix_product_1() {
+fn deduped_handles_matrix_product_1() {
     let lhs = rand_array((2, 3));
     let rhs = rand_array((3, 4));
 
     let correct_answer = lhs.dot(&rhs);
     let sc = validate_and_size("ij,jk", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair_allused_nostacks(&sc, &lhs, &rhs);
+    let dotted = einsum_pair_allused_deduped_indices(&sc, &lhs, &rhs);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
 #[test]
-fn nostacks_handles_matrix_product_2() {
+fn deduped_handles_matrix_product_2() {
     let lhs = rand_array((2, 3));
     let rhs = rand_array((4, 3));
 
     let correct_answer = lhs.dot(&rhs.t());
     let sc = validate_and_size("ij,kj", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair_allused_nostacks(&sc, &lhs, &rhs);
+    let dotted = einsum_pair_allused_deduped_indices(&sc, &lhs, &rhs);
+    assert!(correct_answer.all_close(&dotted, TOL));
+}
+
+#[test]
+fn deduped_handles_stacked_outer_product_1() {
+    let lhs = rand_array((2, 3));
+    let rhs = rand_array((4, 2));
+
+    let mut correct_answer: Array3<f64> = Array::zeros((2, 3, 4));
+    for i in 0..2 {
+        for j in 0..3 {
+            for k in 0..4 {
+                correct_answer[[i, j, k]] = lhs[[i, j]] * rhs[[k, i]];
+            }
+        }
+    }
+
+    let sc = validate_and_size("ij,ki->ijk", &[&lhs, &rhs]).unwrap();
+    let dotted = einsum_pair_allused_deduped_indices(&sc, &lhs, &rhs);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
