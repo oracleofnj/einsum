@@ -29,7 +29,7 @@ pub struct EinsumParse {
     output_indices: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Contraction {
     operand_indices: Vec<String>,
     output_indices: Vec<char>,
@@ -38,7 +38,7 @@ pub struct Contraction {
 
 pub type OutputSize = HashMap<char, usize>;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SizedContraction {
     contraction: Contraction,
     output_size: OutputSize,
@@ -146,6 +146,38 @@ pub struct ClassifiedDedupedPairContraction {
     stack_indices: StackIndexMap,
     contracted_indices: ContractedIndexMap,
     outer_indices: OuterIndexMap,
+}
+
+#[derive(Debug)]
+pub struct OperandNumPair {
+    lhs: usize,
+    rhs: usize,
+}
+
+#[derive(Debug)]
+pub struct FirstStep {
+    sized_contraction: SizedContraction,
+    operand_nums: Option<OperandNumPair>,
+}
+
+#[derive(Debug)]
+pub struct IntermediateStep {
+    sized_contraction: SizedContraction,
+    rhs_num: usize,
+}
+
+#[derive(Debug)]
+pub struct EinsumPath {
+    first_step: FirstStep,
+    remaining_steps: Vec<IntermediateStep>,
+}
+
+#[derive(Debug)]
+pub enum OptimizationMethod {
+    Naive,
+    Greedy,
+    Optimal,
+    Branch,
 }
 
 pub trait ArrayLike<A> {
@@ -1238,6 +1270,86 @@ where
 {
     let sc = validate_and_size(einsum_str, &[lhs, rhs]).unwrap();
     einsum_pair(&sc, lhs, rhs)
+}
+
+pub fn einsum_path<A>(path: &EinsumPath, operands: &[&ArrayLike<A>]) -> ArrayD<A>
+where
+    A: LinalgScalar,
+{
+    let EinsumPath {
+        first_step:
+            FirstStep {
+                ref sized_contraction,
+                ref operand_nums,
+            },
+        ref remaining_steps,
+    } = path;
+
+    let mut result = match operand_nums {
+        None => einsum_singleton(sized_contraction, &(operands[0].into_dyn_view())),
+        Some(OperandNumPair { lhs, rhs }) => einsum_pair(
+            sized_contraction,
+            &(operands[*lhs].into_dyn_view()),
+            &(operands[*rhs].into_dyn_view()),
+        ),
+    };
+    for step in remaining_steps.iter() {
+        let IntermediateStep {
+            ref sized_contraction,
+            ref rhs_num,
+        } = step;
+        result = einsum_pair(
+            &sized_contraction,
+            &result,
+            &(operands[*rhs_num].into_dyn_view()),
+        );
+    }
+    result
+}
+
+fn generate_naive_path(sized_contraction: &SizedContraction) -> EinsumPath {
+    match sized_contraction.contraction.operand_indices.len() {
+        1 => {
+            let first_step = FirstStep {
+                sized_contraction: sized_contraction.clone(),
+                operand_nums: None,
+            };
+            EinsumPath {
+                first_step,
+                remaining_steps: Vec::new(),
+            }
+        }
+        2 => {
+            let first_step = FirstStep {
+                sized_contraction: sized_contraction.clone(),
+                operand_nums: Some(OperandNumPair { lhs: 0, rhs: 1 }),
+            };
+            EinsumPath {
+                first_step,
+                remaining_steps: Vec::new(),
+            }
+        }
+        _ => panic!("Unsupported operand number"),
+    }
+}
+
+pub fn generate_optimized_path(
+    sized_contraction: &SizedContraction,
+    strategy: OptimizationMethod,
+) -> EinsumPath {
+    match strategy {
+        OptimizationMethod::Naive => generate_naive_path(sized_contraction),
+        _ => panic!("Unsupported optimization method"),
+    }
+
+}
+
+pub fn einsum_sc<A>(sized_contraction: &SizedContraction, operands: &[&ArrayLike<A>]) -> ArrayD<A>
+where
+    A: LinalgScalar,
+{
+    let path = generate_optimized_path(sized_contraction, OptimizationMethod::Naive);
+    einsum_path(&path, operands)
 }
 
 //////// Slow stuff below here ////////
