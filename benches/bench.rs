@@ -2,7 +2,7 @@
 extern crate test;
 use test::Bencher;
 
-use einsum;
+use einsum::*;
 use ndarray::prelude::*;
 use ndarray_rand::RandomExt;
 use rand::distributions::Uniform;
@@ -15,7 +15,7 @@ where
 }
 
 #[bench]
-fn bench_multiply_builtin_small(b: &mut Bencher) {
+fn bench_multiply_builtin_tiny(b: &mut Bencher) {
     let m1 = rand_array((3, 4));
     let m2 = rand_array((4, 5));
 
@@ -23,41 +23,41 @@ fn bench_multiply_builtin_small(b: &mut Bencher) {
 }
 
 #[bench]
-fn bench_multiply_small(b: &mut Bencher) {
+fn bench_multiply_tiny(b: &mut Bencher) {
     let m1 = rand_array((3, 4));
     let m2 = rand_array((4, 5));
 
-    b.iter(|| einsum::slow_einsum("ij,jk->ik", &[&m1, &m2]));
+    b.iter(|| einsum_pair_str("ij,jk->ik", &m1, &m2));
+}
+
+#[bench]
+fn bench_multiply_builtin_medium(b: &mut Bencher) {
+    let m1 = rand_array((30, 40));
+    let m2 = rand_array((40, 50));
+
+    b.iter(|| m1.dot(&m2));
 }
 
 #[bench]
 fn bench_multiply_medium(b: &mut Bencher) {
-    let m1 = rand_array((6, 8));
-    let m2 = rand_array((8, 10));
+    let m1 = rand_array((30, 40));
+    let m2 = rand_array((40, 50));
 
-    b.iter(|| einsum::slow_einsum("ij,jk->ik", &[&m1, &m2]));
+    b.iter(|| einsum_pair_str("ij,jk->ik", &m1, &m2));
+}
+
+#[bench]
+fn bench_multiply_builtin_large(b: &mut Bencher) {
+    let m1 = rand_array((300, 400));
+    let m2 = rand_array((400, 500));
+
+    b.iter(|| m1.dot(&m2));
 }
 
 #[bench]
 fn bench_multiply_large(b: &mut Bencher) {
-    let m1 = rand_array((12, 16));
-    let m2 = rand_array((16, 20));
+    let m1 = rand_array((300, 400));
+    let m2 = rand_array((400, 500));
 
-    b.iter(|| einsum::slow_einsum("ij,jk->ik", &[&m1, &m2]));
-}
-
-#[bench]
-fn bench_multiply_xl(b: &mut Bencher) {
-    let m1 = rand_array((24, 32));
-    let m2 = rand_array((32, 40));
-
-    b.iter(|| einsum::slow_einsum("ij,jk->ik", &[&m1, &m2]));
-}
-
-#[bench]
-fn bench_multiply_xxl(b: &mut Bencher) {
-    let m1 = rand_array((48, 64));
-    let m2 = rand_array((64, 80));
-
-    b.iter(|| einsum::slow_einsum("ij,jk->ik", &[&m1, &m2]));
+    b.iter(|| einsum_pair_str("ij,jk->ik", &m1, &m2));
 }

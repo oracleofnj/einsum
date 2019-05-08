@@ -1224,6 +1224,22 @@ where
     }
 }
 
+pub fn einsum_pair_str<A, S, S2, D, E>(
+    einsum_str: &str,
+    lhs: &ArrayBase<S, D>,
+    rhs: &ArrayBase<S2, E>,
+) -> ArrayD<A>
+where
+    A: LinalgScalar,
+    S: Data<Elem = A>,
+    S2: Data<Elem = A>,
+    D: Dimension,
+    E: Dimension,
+{
+    let sc = validate_and_size(einsum_str, &[lhs, rhs]).unwrap();
+    einsum_pair(&sc, lhs, rhs)
+}
+
 //////// Slow stuff below here ////////
 
 fn make_index(indices: &str, bindings: &HashMap<char, usize>) -> IxDyn {
