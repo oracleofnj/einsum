@@ -4,6 +4,10 @@ version = "0.1.0"
 authors = ["oracleofnj <jared.samet@aya.yale.edu>"]
 edition = "2018"
 license = "Apache-2.0"
+repository = "https://github.com/oracleofnj/einsum"
+description = "Implementation of the einsum function for the Rust ndarray crate. As popularized in numpy, einsum (Einstein summation) implements general multidimensional tensor contraction. Many linear algebra operations and generalizations of those operations can be expressed as special cases of tensor contraction."
+keywords = ["einsum", "einstein summation", "tensor", "contraction", "tensor contraction", "ndarray", "multidimensional", "linear algebra"]
+categories = ["science"]
 
 [dependencies]
 regex = "1"
