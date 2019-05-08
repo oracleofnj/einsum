@@ -1383,17 +1383,23 @@ fn generate_naive_path(sized_contraction: &SizedContraction) -> EinsumPath {
                 .iter()
                 .enumerate()
             {
+                let idx_of_rhs = i + 2;
                 lhs_indices = output_indices.iter().cloned().collect();
                 let existing_indices = get_existing_indices(&lhs_indices, rhs_indices);
                 let remaining_indices = get_remaining_indices(
-                    &sized_contraction.contraction.operand_indices[(i + 2)..],
+                    &sized_contraction.contraction.operand_indices[idx_of_rhs..],
                     &sized_contraction.contraction.output_indices,
                 );
                 let lhs_str = output_str.clone();
-                output_indices = existing_indices
-                    .intersection(&remaining_indices)
-                    .cloned()
-                    .collect();
+                if idx_of_rhs == sized_contraction.contraction.operand_indices.len() {
+                    // Used up all of operands
+                    output_indices = existing_indices
+                        .intersection(&remaining_indices)
+                        .cloned()
+                        .collect();
+                } else {
+                    output_indices = sized_contraction.contraction.output_indices.clone();
+                }
                 output_str = output_indices.iter().collect();
                 let einsum_str = format!("{},{}->{}", &lhs_str, &rhs_indices, &output_str);
                 let contraction = validate(&einsum_str).unwrap();
@@ -1405,7 +1411,7 @@ fn generate_naive_path(sized_contraction: &SizedContraction) -> EinsumPath {
                 };
                 remaining_steps.push(IntermediateStep {
                     sized_contraction: sc,
-                    rhs_num: i + 2,
+                    rhs_num: idx_of_rhs,
                 });
             }
 

@@ -707,3 +707,84 @@ fn it_contracts_three_matrices() {
     let dotted = einsum_sc(&sc, &[&op1, &op2, &op3]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
+
+#[test]
+fn it_contracts_three_matrices_with_repeats_1() {
+    let op1 = rand_array((2, 3));
+    let op2 = rand_array((3, 6, 6, 7, 4));
+    let op3 = rand_array((4, 5));
+
+    let mut correct_answer: Array2<f64> = Array::zeros((2, 5));
+    for i in 0..2 {
+        for l in 0..5 {
+            for j in 0..3 {
+                for k in 0..4 {
+                    for m in 0..6 {
+                        for n in 0..7 {
+                            correct_answer[[i, l]] +=
+                                op1[[i, j]] * op2[[j, m, m, n, k]] * op3[[k, l]];
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let sc = validate_and_size("ij,jmmnk,kl->il", &[&op1, &op2, &op3]).unwrap();
+    let dotted = einsum_sc(&sc, &[&op1, &op2, &op3]);
+    assert!(correct_answer.all_close(&dotted, TOL));
+}
+
+#[test]
+fn it_contracts_three_matrices_with_repeats_2() {
+    let op1 = rand_array((2, 6, 6, 7, 3));
+    let op2 = rand_array((3, 4));
+    let op3 = rand_array((4, 6, 5));
+
+    let mut correct_answer: Array2<f64> = Array::zeros((2, 5));
+    for i in 0..2 {
+        for l in 0..5 {
+            for j in 0..3 {
+                for k in 0..4 {
+                    for m in 0..6 {
+                        for n in 0..7 {
+                            correct_answer[[i, l]] +=
+                                op1[[i, m, m, n, j]] * op2[[j, k]] * op3[[k, m, l]];
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let sc = validate_and_size("immnj,jk,kml->il", &[&op1, &op2, &op3]).unwrap();
+    let dotted = einsum_sc(&sc, &[&op1, &op2, &op3]);
+    assert!(correct_answer.all_close(&dotted, TOL));
+}
+
+#[test]
+fn it_contracts_three_matrices_with_repeats_3() {
+    let op1 = rand_array((2, 6, 6, 7, 3));
+    let op2 = rand_array((3, 4));
+    let op3 = rand_array((4, 5));
+
+    let mut correct_answer: Array3<f64> = Array::zeros((6, 2, 5));
+    for i in 0..2 {
+        for l in 0..5 {
+            for j in 0..3 {
+                for k in 0..4 {
+                    for m in 0..6 {
+                        for n in 0..7 {
+                            correct_answer[[m, i, l]] +=
+                                op1[[i, m, m, n, j]] * op2[[j, k]] * op3[[k, l]];
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let sc = validate_and_size("immnj,jk,kl->mil", &[&op1, &op2, &op3]).unwrap();
+    let dotted = einsum_sc(&sc, &[&op1, &op2, &op3]);
+    assert!(correct_answer.all_close(&dotted, TOL));
+}
