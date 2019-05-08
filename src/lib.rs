@@ -1307,6 +1307,25 @@ where
     result
 }
 
+fn get_remaining_indices(operand_indices: &[String], output_indices: &[char]) -> HashSet<char> {
+    let mut result: HashSet<char> = HashSet::new();
+    for c in operand_indices.iter().flat_map(|s| s.chars()) {
+        result.insert(c);
+    }
+    for &c in output_indices.iter() {
+        result.insert(c);
+    }
+    result
+}
+
+fn get_existing_indices(lhs_indices: &HashSet<char>, rhs_indices: &str) -> HashSet<char> {
+    let mut result: HashSet<char> = lhs_indices.clone();
+    for c in rhs_indices.chars() {
+        result.insert(c);
+    }
+    result
+}
+
 fn generate_naive_path(sized_contraction: &SizedContraction) -> EinsumPath {
     match sized_contraction.contraction.operand_indices.len() {
         1 => {
@@ -1329,7 +1348,72 @@ fn generate_naive_path(sized_contraction: &SizedContraction) -> EinsumPath {
                 remaining_steps: Vec::new(),
             }
         }
-        _ => panic!("Unsupported operand number"),
+        _ => {
+            let mut lhs_indices: HashSet<char> = sized_contraction.contraction.operand_indices[0]
+                .chars()
+                .collect();
+            let rhs_indices = &sized_contraction.contraction.operand_indices[1];
+            let existing_indices = get_existing_indices(&lhs_indices, rhs_indices);
+            let remaining_indices = get_remaining_indices(
+                &sized_contraction.contraction.operand_indices[2..],
+                &sized_contraction.contraction.output_indices,
+            );
+            let mut output_indices: Vec<char> = existing_indices
+                .intersection(&remaining_indices)
+                .cloned()
+                .collect();
+            let mut output_str: String = output_indices.iter().collect();
+            let einsum_str = format!(
+                "{},{}->{}",
+                &sized_contraction.contraction.operand_indices[0], &rhs_indices, &output_str
+            );
+            let contraction = validate(&einsum_str).unwrap();
+            let mut output_size: HashMap<char, usize> = sized_contraction.output_size.clone();
+            output_size.retain(|k, _| existing_indices.contains(k));
+            let sc = SizedContraction {
+                contraction,
+                output_size,
+            };
+            let first_step = FirstStep {
+                sized_contraction: sc,
+                operand_nums: Some(OperandNumPair { lhs: 0, rhs: 1 }),
+            };
+            let mut remaining_steps = Vec::new();
+            for (i, rhs_indices) in sized_contraction.contraction.operand_indices[2..]
+                .iter()
+                .enumerate()
+            {
+                lhs_indices = output_indices.iter().cloned().collect();
+                let existing_indices = get_existing_indices(&lhs_indices, rhs_indices);
+                let remaining_indices = get_remaining_indices(
+                    &sized_contraction.contraction.operand_indices[(i + 2)..],
+                    &sized_contraction.contraction.output_indices,
+                );
+                let lhs_str = output_str.clone();
+                output_indices = existing_indices
+                    .intersection(&remaining_indices)
+                    .cloned()
+                    .collect();
+                output_str = output_indices.iter().collect();
+                let einsum_str = format!("{},{}->{}", &lhs_str, &rhs_indices, &output_str);
+                let contraction = validate(&einsum_str).unwrap();
+                let mut output_size: HashMap<char, usize> = sized_contraction.output_size.clone();
+                output_size.retain(|k, _| existing_indices.contains(k));
+                let sc = SizedContraction {
+                    contraction,
+                    output_size,
+                };
+                remaining_steps.push(IntermediateStep {
+                    sized_contraction: sc,
+                    rhs_num: i + 2,
+                });
+            }
+
+            EinsumPath {
+                first_step,
+                remaining_steps,
+            }
+        }
     }
 }
 
@@ -1349,6 +1433,7 @@ where
     A: LinalgScalar,
 {
     let path = generate_optimized_path(sized_contraction, OptimizationMethod::Naive);
+    println!("{:?}", path);
     einsum_path(&path, operands)
 }
 

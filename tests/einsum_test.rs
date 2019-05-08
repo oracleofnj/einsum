@@ -17,7 +17,7 @@ fn it_multiplies_two_matrices() {
     let b = rand_array((4, 5));
 
     let correct_answer = a.dot(&b).into_dyn();
-    let lib_output = einsum::slow_einsum("ij,jk->ik", &[&a, &b]).unwrap();
+    let lib_output = slow_einsum("ij,jk->ik", &[&a, &b]).unwrap();
 
     assert!(correct_answer.all_close(&lib_output, TOL));
 }
@@ -70,7 +70,7 @@ fn it_collapses_a_singleton_without_repeats() {
     }
 
     let sc = validate_and_size("ijkl->lij", &[&s]).unwrap();
-    let collapsed = einsum_singleton(&sc, &s);
+    let collapsed = einsum_sc(&sc, &[&s]);
 
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
@@ -90,7 +90,7 @@ fn it_diagonalizes_a_singleton() {
     }
 
     let sc = validate_and_size("jkiii->jik", &[&s]).unwrap();
-    let collapsed = einsum_singleton(&sc, &s);
+    let collapsed = einsum_sc(&sc, &[&s]);
 
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
@@ -110,7 +110,7 @@ fn it_collapses_a_singleton_with_multiple_repeats() {
     }
 
     let sc = validate_and_size("kjiji->ijk", &[&s]).unwrap();
-    let collapsed = einsum_singleton(&sc, &s);
+    let collapsed = einsum_sc(&sc, &[&s]);
 
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
@@ -131,7 +131,7 @@ fn it_collapses_a_singleton_with_a_repeat_that_gets_summed() {
     }
 
     let sc = validate_and_size("iij->j", &[&s]).unwrap();
-    let collapsed = einsum_singleton(&sc, &s);
+    let collapsed = einsum_sc(&sc, &[&s]);
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
 
@@ -152,7 +152,7 @@ fn it_collapses_a_singleton_with_multiple_repeats_that_get_summed() {
     }
 
     let sc = validate_and_size("iijkk->j", &[&s]).unwrap();
-    let collapsed = einsum_singleton(&sc, &s);
+    let collapsed = einsum_sc(&sc, &[&s]);
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
 
@@ -174,7 +174,7 @@ fn it_collapses_a_singleton_with_multiple_sums() {
     }
 
     let sc = validate_and_size("ijk->k", &[&s]).unwrap();
-    let collapsed = einsum_singleton(&sc, &s);
+    let collapsed = einsum_sc(&sc, &[&s]);
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
 
@@ -197,7 +197,7 @@ fn it_collapses_a_singleton() {
     }
 
     let sc = validate_and_size("iijkl->lij", &[&s]).unwrap();
-    let collapsed = einsum_singleton(&sc, &s);
+    let collapsed = einsum_sc(&sc, &[&s]);
 
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
@@ -236,7 +236,7 @@ fn deduped_handles_dot_product() {
 
     let correct_answer = arr0(lhs.dot(&rhs));
     let sc = validate_and_size("i,i->", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -247,7 +247,7 @@ fn deduped_handles_hadamard_product() {
 
     let correct_answer = (&lhs * &rhs).into_dyn();
     let sc = validate_and_size("i,i->i", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -264,7 +264,7 @@ fn deduped_handles_outer_product_vec_vec() {
     }
 
     let sc = validate_and_size("i,j->ij", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -283,7 +283,7 @@ fn deduped_handles_matrix_vector_1() {
     }
 
     let sc = validate_and_size("ij,j->i", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
     assert!(correct_answer.all_close(&(lhs.dot(&rhs)), TOL));
 }
@@ -303,7 +303,7 @@ fn deduped_handles_matrix_vector_2() {
     }
 
     let sc = validate_and_size("i,ij->j", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
     assert!(correct_answer.all_close(&(lhs.dot(&rhs)), TOL));
 }
@@ -323,7 +323,7 @@ fn deduped_handles_matrix_vector_3() {
     }
 
     let sc = validate_and_size("ij,i->j", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
     assert!(correct_answer.all_close(&(rhs.dot(&lhs)), TOL));
 }
@@ -343,7 +343,7 @@ fn deduped_handles_matrix_vector_4() {
     }
 
     let sc = validate_and_size("j,ij->i", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
     assert!(correct_answer.all_close(&(rhs.dot(&lhs)), TOL));
 }
@@ -361,7 +361,7 @@ fn deduped_handles_stacked_scalar_vector_product_1() {
     }
 
     let sc = validate_and_size("ij,i->ij", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -378,7 +378,7 @@ fn deduped_handles_stacked_scalar_vector_product_2() {
     }
 
     let sc = validate_and_size("ij,i->ji", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -395,7 +395,7 @@ fn deduped_handles_stacked_scalar_vector_product_3() {
     }
 
     let sc = validate_and_size("i,ji->ij", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -407,7 +407,7 @@ fn deduped_handles_summed_hadamard_product_aka_stacked_1d_tensordot_1() {
     let correct_answer = (&lhs * &rhs).sum_axis(Axis(1));
 
     let sc = validate_and_size("ij,ij->i", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -419,7 +419,7 @@ fn deduped_handles_summed_hadamard_product_aka_stacked_1d_tensordot_2() {
     let correct_answer = (&lhs * &rhs.t()).sum_axis(Axis(1));
 
     let sc = validate_and_size("ij,ji->i", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -431,7 +431,7 @@ fn deduped_handles_summed_hadamard_product_aka_stacked_1d_tensordot_3() {
     let correct_answer = (&lhs * &rhs.t()).sum_axis(Axis(0));
 
     let sc = validate_and_size("ji,ij->i", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -452,7 +452,7 @@ fn deduped_handles_summed_hadamard_product_multiple_stacked_axes() {
     }
 
     let sc = validate_and_size("ijkl,jlki->kji", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -464,7 +464,7 @@ fn deduped_handles_2d_hadamard_product() {
     let correct_answer = (&lhs * &rhs).into_dyn();
 
     let sc = validate_and_size("ij,ij->ij", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -477,7 +477,7 @@ fn deduped_handles_2d_hadamard_product_2() {
     let correct_answer = correct_answer_t.t();
 
     let sc = validate_and_size("ij,ij->ji", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -489,7 +489,7 @@ fn deduped_handles_2d_hadamard_product_3() {
     let correct_answer = (&lhs.t() * &rhs).into_dyn();
 
     let sc = validate_and_size("ji,ij->ij", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -500,7 +500,7 @@ fn deduped_handles_double_dot_product_mat_mat() {
 
     let correct_answer = arr0((&lhs * &rhs).sum());
     let sc = validate_and_size("ij,ij->", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -518,7 +518,7 @@ fn deduped_handles_outer_product_vect_mat_1() {
         }
     }
     let sc = validate_and_size("ij,k->kij", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -536,7 +536,7 @@ fn deduped_handles_outer_product_vect_mat_2() {
         }
     }
     let sc = validate_and_size("k,ij->kij", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -556,7 +556,7 @@ fn deduped_handles_outer_product_mat_mat() {
         }
     }
     let sc = validate_and_size("lk,ij->kilj", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -568,7 +568,7 @@ fn deduped_handles_matrix_product_1() {
 
     let correct_answer = lhs.dot(&rhs);
     let sc = validate_and_size("ij,jk", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -579,7 +579,7 @@ fn deduped_handles_matrix_product_2() {
 
     let correct_answer = lhs.dot(&rhs.t());
     let sc = validate_and_size("ij,kj", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -598,7 +598,7 @@ fn deduped_handles_stacked_outer_product_1() {
     }
 
     let sc = validate_and_size("ij,ki->ijk", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -613,7 +613,7 @@ fn diagonals_product() {
     }
 
     let sc = validate_and_size("ii,ii->i", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -628,7 +628,7 @@ fn diagonals_product_lhs() {
     }
 
     let sc = validate_and_size("ii,i->i", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -643,7 +643,7 @@ fn diagonals_product_rhs() {
     }
 
     let sc = validate_and_size("i,ii->i", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -660,7 +660,7 @@ fn presum_lhs() {
     }
 
     let sc = validate_and_size("ij,ii->i", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -682,6 +682,28 @@ fn it_tolerates_permuted_axes() {
     }
 
     let sc = validate_and_size("ijk,jkl->il", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    assert!(correct_answer.all_close(&dotted, TOL));
+}
+
+#[test]
+fn it_contracts_three_matrices() {
+    let op1 = rand_array((2, 3));
+    let op2 = rand_array((3, 4));
+    let op3 = rand_array((4, 5));
+
+    let mut correct_answer: Array2<f64> = Array::zeros((2, 5));
+    for i in 0..2 {
+        for l in 0..5 {
+            for j in 0..3 {
+                for k in 0..4 {
+                    correct_answer[[i, l]] += op1[[i, j]] * op2[[j, k]] * op3[[k, l]];
+                }
+            }
+        }
+    }
+
+    let sc = validate_and_size("ij,jk,kl->il", &[&op1, &op2, &op3]).unwrap();
+    let dotted = einsum_sc(&sc, &[&op1, &op2, &op3]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
