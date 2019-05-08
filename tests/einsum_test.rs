@@ -663,3 +663,25 @@ fn presum_lhs() {
     let dotted = einsum_pair(&sc, &lhs, &rhs);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
+
+#[test]
+fn it_tolerates_permuted_axes() {
+    let lhs = rand_array((2, 3, 4));
+    let mut rhs = rand_array((5, 3, 4));
+    rhs = rhs.permuted_axes([1, 2, 0]);
+
+    let mut correct_answer: Array2<f64> = Array::zeros((2, 5));
+    for i in 0..2 {
+        for l in 0..5 {
+            for j in 0..3 {
+                for k in 0..4 {
+                    correct_answer[[i, l]] += lhs[[i, j, k]] * rhs[[j, k, l]];
+                }
+            }
+        }
+    }
+
+    let sc = validate_and_size("ijk,jkl->il", &[&lhs, &rhs]).unwrap();
+    let dotted = einsum_pair(&sc, &lhs, &rhs);
+    assert!(correct_answer.all_close(&dotted, TOL));
+}
