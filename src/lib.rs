@@ -721,7 +721,7 @@ pub fn einsum_singleton<A, S, D>(
     tensor: &ArrayBase<S, D>,
 ) -> ArrayD<A>
 where
-    A: LinalgScalar + std::fmt::Debug,
+    A: LinalgScalar,
     S: Data<Elem = A>,
     D: Dimension,
 {
@@ -969,7 +969,7 @@ where
     Array::from_shape_vec(IxDyn(&output_shape), temp_result.iter().cloned().collect()).unwrap()
 }
 
-pub fn einsum_pair_allused_deduped_indices<A, S, S2, D, E>(
+fn einsum_pair_allused_deduped_indices<A, S, S2, D, E>(
     sized_contraction: &SizedContraction,
     lhs: &ArrayBase<S, D>,
     rhs: &ArrayBase<S2, E>,
@@ -1160,7 +1160,67 @@ where
 
     match (simplify_lhs, simplify_rhs) {
         (false, false) => einsum_pair_allused_deduped_indices(sized_contraction, lhs, rhs),
-        (_, _) => panic!(),
+        (true, true) => {
+            let new_lhs_str: String = lhs_desired.iter().collect();
+            let einsum_string_lhs = format!(
+                "{}->{}",
+                &sized_contraction.contraction.operand_indices[0], new_lhs_str
+            );
+            let new_rhs_str: String = rhs_desired.iter().collect();
+            let einsum_string_rhs = format!(
+                "{}->{}",
+                &sized_contraction.contraction.operand_indices[1], new_rhs_str
+            );
+            let output_str: String = sized_contraction
+                .contraction
+                .output_indices
+                .iter()
+                .collect();
+            let new_einsum_string = format!("{},{}->{}", new_lhs_str, new_rhs_str, output_str);
+            let sc = validate_and_size(&einsum_string_lhs, &[lhs]).unwrap();
+            let lhs_collapsed = einsum_singleton(&sc, lhs);
+            let sc = validate_and_size(&einsum_string_rhs, &[rhs]).unwrap();
+            let rhs_collapsed = einsum_singleton(&sc, rhs);
+            let sc =
+                validate_and_size(&new_einsum_string, &[&lhs_collapsed, &rhs_collapsed]).unwrap();
+            einsum_pair_allused_deduped_indices(&sc, &lhs_collapsed, &rhs_collapsed)
+        }
+        (true, false) => {
+            let new_lhs_str: String = lhs_desired.iter().collect();
+            let einsum_string_lhs = format!(
+                "{}->{}",
+                &sized_contraction.contraction.operand_indices[0], new_lhs_str
+            );
+            let new_rhs_str = &sized_contraction.contraction.operand_indices[1];
+            let output_str: String = sized_contraction
+                .contraction
+                .output_indices
+                .iter()
+                .collect();
+            let new_einsum_string = format!("{},{}->{}", new_lhs_str, new_rhs_str, output_str);
+            let sc = validate_and_size(&einsum_string_lhs, &[lhs]).unwrap();
+            let lhs_collapsed = einsum_singleton(&sc, lhs);
+            let sc = validate_and_size(&new_einsum_string, &[&lhs_collapsed, rhs]).unwrap();
+            einsum_pair_allused_deduped_indices(&sc, &lhs_collapsed, rhs)
+        }
+        (false, true) => {
+            let new_lhs_str = &sized_contraction.contraction.operand_indices[0];
+            let new_rhs_str: String = rhs_desired.iter().collect();
+            let einsum_string_rhs = format!(
+                "{}->{}",
+                &sized_contraction.contraction.operand_indices[1], new_rhs_str
+            );
+            let output_str: String = sized_contraction
+                .contraction
+                .output_indices
+                .iter()
+                .collect();
+            let new_einsum_string = format!("{},{}->{}", new_lhs_str, new_rhs_str, output_str);
+            let sc = validate_and_size(&einsum_string_rhs, &[rhs]).unwrap();
+            let rhs_collapsed = einsum_singleton(&sc, rhs);
+            let sc = validate_and_size(&new_einsum_string, &[lhs, &rhs_collapsed]).unwrap();
+            einsum_pair_allused_deduped_indices(&sc, lhs, &rhs_collapsed)
+        }
     }
 }
 
