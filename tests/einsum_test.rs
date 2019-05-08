@@ -89,7 +89,8 @@ fn it_diagonalizes_a_singleton() {
         }
     }
 
-    let collapsed = diagonalize_singleton(&s, &[2, 3, 4], 1);
+    let sc = validate_and_size("jkiii->jik", &[&s]).unwrap();
+    let collapsed = einsum_singleton(&sc, &s);
 
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }

@@ -347,7 +347,7 @@ fn generate_info_vector_for_singleton(
     indices
 }
 
-pub fn generate_classified_singleton_contraction(
+fn generate_classified_singleton_contraction(
     sized_contraction: &SizedContraction,
 ) -> ClassifiedSingletonContraction {
     let Contraction {
@@ -462,7 +462,7 @@ fn generate_info_vector_for_pair(
     indices
 }
 
-pub fn generate_classified_pair_contraction(
+fn generate_classified_pair_contraction(
     sized_contraction: &SizedContraction,
 ) -> ClassifiedDedupedPairContraction {
     let Contraction {
@@ -661,7 +661,7 @@ where
 
 // TODO: Replace this by calculating the right dimensions and strides to use
 // TODO: Take a &mut ClassifiedSingletonContraction and mutate it
-pub fn diagonalize_singleton<A, S, D>(
+fn diagonalize_singleton<A, S, D>(
     tensor: &ArrayBase<S, D>,
     axes: &[usize],
     destination_axis: usize,
@@ -690,7 +690,7 @@ where
 
 // TODO: Take a &mut ClassifiedSingletonContraction and mutate it instead
 // of mutating operand_indices
-pub fn diagonalize_singleton_char<A>(
+fn diagonalize_singleton_char<A>(
     tensor: &mut ArrayD<A>,
     operand_indices: &mut String,
     repeated_index: char,
@@ -933,7 +933,7 @@ where
     tensordot(lhs, rhs, &lhs_axes, &rhs_axes).permuted_axes(permutation)
 }
 
-pub fn move_stack_indices_to_front<A, S, D>(
+fn move_stack_indices_to_front<A, S, D>(
     input_indices: &[IndexWithPairInfo],
     stack_index_order: &[char],
     tensor: &ArrayBase<S, D>,
@@ -960,13 +960,13 @@ where
         }
     }
 
-    let temp_result = tensor.view().into_dyn().into_owned().permuted_axes(permutation);
+    let temp_result = tensor
+        .view()
+        .into_dyn()
+        .into_owned()
+        .permuted_axes(permutation);
 
-    Array::from_shape_vec(
-        IxDyn(&output_shape),
-        temp_result.iter().cloned().collect(),
-    )
-    .unwrap()
+    Array::from_shape_vec(IxDyn(&output_shape), temp_result.iter().cloned().collect()).unwrap()
 }
 
 pub fn einsum_pair_allused_deduped_indices<A, S, S2, D, E>(
@@ -1110,7 +1110,7 @@ where
 
 }
 
-pub fn einsum_pair_allused_nostacks<A, S, S2, D, E>(
+pub fn einsum_pair<A, S, S2, D, E>(
     sized_contraction: &SizedContraction,
     lhs: &ArrayBase<S, D>,
     rhs: &ArrayBase<S2, E>,
@@ -1122,8 +1122,46 @@ where
     D: Dimension,
     E: Dimension,
 {
-    let cpc = generate_classified_pair_contraction(sized_contraction);
-    einsum_pair_allused_nostacks_classified_deduped_indices(&cpc, lhs, rhs)
+    // If we have abc,bcde -> ae [no d in output] or abbc,bce -> ae [repeated b in input],
+    // collapse the offending tensor before delegating to einsum_pair_allused_deduped_indices
+    // In other words: collapse each tensor so that each index of each tensor is unique,
+    // and is either in the other tensor or in the output
+
+    assert_eq!(sized_contraction.contraction.operand_indices.len(), 2);
+    let mut lhs_existing: Vec<char> = sized_contraction.contraction.operand_indices[0]
+        .chars()
+        .collect();
+    let mut rhs_existing: Vec<char> = sized_contraction.contraction.operand_indices[1]
+        .chars()
+        .collect();
+
+    let lhs_uniques: HashSet<char> = lhs_existing.iter().cloned().collect();
+    let rhs_uniques: HashSet<char> = rhs_existing.iter().cloned().collect();
+    let output_uniques: HashSet<char> = sized_contraction
+        .contraction
+        .output_indices
+        .iter()
+        .cloned()
+        .collect();
+
+    let rhs_and_output: HashSet<char> = rhs_uniques.union(&output_uniques).cloned().collect();
+    let lhs_and_output: HashSet<char> = lhs_uniques.union(&output_uniques).cloned().collect();
+
+    let mut lhs_desired: Vec<char> = lhs_uniques.intersection(&rhs_and_output).cloned().collect();
+    let mut rhs_desired: Vec<char> = rhs_uniques.intersection(&lhs_and_output).cloned().collect();
+
+    lhs_desired.sort();
+    rhs_desired.sort();
+    lhs_existing.sort();
+    rhs_existing.sort();
+
+    let simplify_lhs = !(lhs_desired == lhs_existing);
+    let simplify_rhs = !(rhs_desired == rhs_existing);
+
+    match (simplify_lhs, simplify_rhs) {
+        (false, false) => einsum_pair_allused_deduped_indices(sized_contraction, lhs, rhs),
+        (_, _) => panic!(),
+    }
 }
 
 //////// Slow stuff below here ////////
