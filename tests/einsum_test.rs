@@ -17,7 +17,7 @@ fn it_multiplies_two_matrices() {
     let b = rand_array((4, 5));
 
     let correct_answer = a.dot(&b).into_dyn();
-    let lib_output = slow_einsum("ij,jk->ik", &[&a, &b]).unwrap();
+    let lib_output = einsum("ij,jk->ik", &[&a, &b]).unwrap();
 
     assert!(correct_answer.all_close(&lib_output, TOL));
 }
@@ -31,7 +31,7 @@ fn it_computes_the_trace() {
         .collect();
     let correct_answer = arr1(&diag).into_dyn();
 
-    let lib_output = slow_einsum("ii->i", &[&square_matrix]).unwrap();
+    let lib_output = einsum("ii->i", &[&square_matrix]).unwrap();
 
     assert!(correct_answer.all_close(&lib_output, TOL));
 }
@@ -42,9 +42,9 @@ fn it_transposes_a_matrix() {
 
     let correct_answer = rect_matrix.t();
 
-    let tr1 = slow_einsum("ji", &[&rect_matrix]).unwrap();
-    let tr2 = slow_einsum("ij->ji", &[&rect_matrix]).unwrap();
-    let tr3 = slow_einsum("ji->ij", &[&rect_matrix]).unwrap();
+    let tr1 = einsum("ji", &[&rect_matrix]).unwrap();
+    let tr2 = einsum("ij->ji", &[&rect_matrix]).unwrap();
+    let tr3 = einsum("ji->ij", &[&rect_matrix]).unwrap();
 
     assert!(correct_answer.all_close(&tr1, TOL));
     assert!(correct_answer.all_close(&tr2, TOL));

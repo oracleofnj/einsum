@@ -24,14 +24,14 @@ use ndarray::prelude::*;
 use ndarray::{Data, IxDyn, LinalgScalar};
 
 #[derive(Debug)]
-pub struct EinsumParse {
+struct EinsumParse {
     operand_indices: Vec<String>,
     output_indices: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Contraction {
-    operand_indices: Vec<String>,
+    operand_indices: Vec<Vec<char>>,
     output_indices: Vec<char>,
     summation_indices: Vec<char>,
 }
@@ -244,10 +244,15 @@ fn generate_contraction(parse: &EinsumParse) -> Result<Contraction, &'static str
     }
     summation_indices.sort();
 
+    let mut operand_indices: Vec<Vec<char>> = Vec::new();
+    for op in parse.operand_indices.iter() {
+        operand_indices.push(op.chars().collect());
+    }
+
     Ok(Contraction {
-        operand_indices: parse.operand_indices.clone(),
-        output_indices: output_indices,
-        summation_indices: summation_indices,
+        operand_indices,
+        output_indices,
+        summation_indices,
     })
 }
 
@@ -296,7 +301,7 @@ fn get_output_size_from_shapes(
 
     for (indices, operand_shape) in contraction.operand_indices.iter().zip(operand_shapes) {
         // Check that len(operand_indices[i]) == len(operands[i].shape())
-        if indices.chars().count() != operand_shape.len() {
+        if indices.len() != operand_shape.len() {
             return Err(
                 "number of indices in one or more operands does not match dimensions of operand",
             );
@@ -304,7 +309,7 @@ fn get_output_size_from_shapes(
 
         // Check that whenever there are multiple copies of an index,
         // operands[i].shape()[m] == operands[j].shape()[n]
-        for (c, &n) in indices.chars().zip(operand_shape) {
+        for (&c, &n) in indices.iter().zip(operand_shape) {
             let existing_n = index_lengths.entry(c).or_insert(n);
             if *existing_n != n {
                 return Err("repeated index with different size");
@@ -393,7 +398,7 @@ fn generate_classified_singleton_contraction(
     let mut untouched_indices = HashMap::new();
     let mut diagonalized_indices = HashMap::new();
     let mut summed_indices = HashMap::new();
-    let input_chars: Vec<char> = operand_indices[0].chars().collect();
+    let input_chars = &operand_indices[0];
 
     for (output_position, &c) in output_indices.iter().enumerate() {
         let mut input_positions = Vec::new();
@@ -508,13 +513,13 @@ fn generate_classified_pair_contraction(
     let mut stack_indices = HashMap::new();
     let mut contracted_indices = HashMap::new();
     let mut outer_indices = HashMap::new();
-    let lhs_chars: Vec<char> = operand_indices[0].chars().collect();
-    let rhs_chars: Vec<char> = operand_indices[1].chars().collect();
+    let lhs_chars = &operand_indices[0];
+    let rhs_chars = &operand_indices[1];
 
     for (output_position, &c) in output_indices.iter().enumerate() {
         match (
-            operand_indices[0].chars().position(|x| x == c),
-            operand_indices[1].chars().position(|x| x == c),
+            lhs_chars.iter().position(|&x| x == c),
+            rhs_chars.iter().position(|&x| x == c),
         ) {
             (Some(lhs_position), Some(rhs_position)) => {
                 stack_indices.insert(
@@ -550,8 +555,8 @@ fn generate_classified_pair_contraction(
 
     for &c in summation_indices.iter() {
         match (
-            operand_indices[0].chars().position(|x| x == c),
-            operand_indices[1].chars().position(|x| x == c),
+            lhs_chars.iter().position(|&x| x == c),
+            rhs_chars.iter().position(|&x| x == c),
         ) {
             (Some(lhs_position), Some(rhs_position)) => {
                 contracted_indices.insert(
@@ -724,17 +729,17 @@ where
 // of mutating operand_indices
 fn diagonalize_singleton_char<A>(
     tensor: &mut ArrayD<A>,
-    operand_indices: &mut String,
+    operand_indices: &mut Vec<char>,
     repeated_index: char,
 ) where
     A: LinalgScalar,
 {
-    let mut new_string = String::from("");
+    let mut new_indices = Vec::new();
     let mut axes = Vec::new();
-    new_string.push(repeated_index);
-    for (i, c) in operand_indices.chars().enumerate() {
+    new_indices.push(repeated_index);
+    for (i, &c) in operand_indices.iter().enumerate() {
         if c != repeated_index {
-            new_string.push(c);
+            new_indices.push(c);
         } else {
             axes.push(i);
         }
@@ -742,7 +747,7 @@ fn diagonalize_singleton_char<A>(
     let new_tensor = diagonalize_singleton(tensor, &axes, 0);
 
     *tensor = new_tensor;
-    *operand_indices = new_string;
+    *operand_indices = new_indices;
 }
 
 // TODO: Figure out correct magic with strides and dimensions
@@ -761,7 +766,7 @@ where
     assert!(sized_contraction.contraction.operand_indices.len() == 1);
     let mut distinct_elements = HashSet::new();
     let mut repeated_elements = HashSet::new();
-    for c in sized_contraction.contraction.operand_indices[0].chars() {
+    for &c in sized_contraction.contraction.operand_indices[0].iter() {
         if distinct_elements.contains(&c) {
             repeated_elements.insert(c);
         } else {
@@ -783,13 +788,13 @@ where
         }
 
         // TODO: Just make the new contraction directly
-        let mut new_einsum_string = operand_indices.clone();
-        new_einsum_string += "->";
-        new_einsum_string += &sized_contraction
+        let operand_indices_str: String = operand_indices.iter().collect();
+        let output_str: String = sized_contraction
             .contraction
             .output_indices
             .iter()
-            .collect::<String>();
+            .collect();
+        let new_einsum_string = format!("{}->{}", operand_indices_str, output_str);
         let new_contraction = validate_and_size(&new_einsum_string, &[&modified_tensor]).unwrap();
 
         let csc = generate_classified_singleton_contraction(&new_contraction);
@@ -1071,10 +1076,7 @@ where
         }
         let new_sized_contraction = SizedContraction {
             contraction: Contraction {
-                operand_indices: vec![
-                    unstacked_lhs_chars.iter().collect::<String>(),
-                    unstacked_rhs_chars.iter().collect::<String>(),
-                ],
+                operand_indices: vec![unstacked_lhs_chars.clone(), unstacked_rhs_chars.clone()],
                 output_indices: unstacked_output_chars,
                 summation_indices: summation_chars,
             },
@@ -1160,12 +1162,8 @@ where
     // and is either in the other tensor or in the output
 
     assert_eq!(sized_contraction.contraction.operand_indices.len(), 2);
-    let mut lhs_existing: Vec<char> = sized_contraction.contraction.operand_indices[0]
-        .chars()
-        .collect();
-    let mut rhs_existing: Vec<char> = sized_contraction.contraction.operand_indices[1]
-        .chars()
-        .collect();
+    let mut lhs_existing: Vec<char> = sized_contraction.contraction.operand_indices[0].clone();
+    let mut rhs_existing: Vec<char> = sized_contraction.contraction.operand_indices[1].clone();
 
     let lhs_uniques: HashSet<char> = lhs_existing.iter().cloned().collect();
     let rhs_uniques: HashSet<char> = rhs_existing.iter().cloned().collect();
@@ -1193,16 +1191,16 @@ where
     match (simplify_lhs, simplify_rhs) {
         (false, false) => einsum_pair_allused_deduped_indices(sized_contraction, lhs, rhs),
         (true, true) => {
+            let lhs_str: String = sized_contraction.contraction.operand_indices[0]
+                .iter()
+                .collect();
             let new_lhs_str: String = lhs_desired.iter().collect();
-            let einsum_string_lhs = format!(
-                "{}->{}",
-                &sized_contraction.contraction.operand_indices[0], new_lhs_str
-            );
+            let einsum_string_lhs = format!("{}->{}", &lhs_str, new_lhs_str);
+            let rhs_str: String = sized_contraction.contraction.operand_indices[1]
+                .iter()
+                .collect();
             let new_rhs_str: String = rhs_desired.iter().collect();
-            let einsum_string_rhs = format!(
-                "{}->{}",
-                &sized_contraction.contraction.operand_indices[1], new_rhs_str
-            );
+            let einsum_string_rhs = format!("{}->{}", &rhs_str, new_rhs_str);
             let output_str: String = sized_contraction
                 .contraction
                 .output_indices
@@ -1218,12 +1216,14 @@ where
             einsum_pair_allused_deduped_indices(&sc, &lhs_collapsed, &rhs_collapsed)
         }
         (true, false) => {
+            let lhs_str: String = sized_contraction.contraction.operand_indices[0]
+                .iter()
+                .collect();
             let new_lhs_str: String = lhs_desired.iter().collect();
-            let einsum_string_lhs = format!(
-                "{}->{}",
-                &sized_contraction.contraction.operand_indices[0], new_lhs_str
-            );
-            let new_rhs_str = &sized_contraction.contraction.operand_indices[1];
+            let einsum_string_lhs = format!("{}->{}", &lhs_str, new_lhs_str);
+            let new_rhs_str: String = sized_contraction.contraction.operand_indices[1]
+                .iter()
+                .collect();
             let output_str: String = sized_contraction
                 .contraction
                 .output_indices
@@ -1236,12 +1236,14 @@ where
             einsum_pair_allused_deduped_indices(&sc, &lhs_collapsed, rhs)
         }
         (false, true) => {
-            let new_lhs_str = &sized_contraction.contraction.operand_indices[0];
+            let new_lhs_str: String = sized_contraction.contraction.operand_indices[0]
+                .iter()
+                .collect();
+            let rhs_str: String = sized_contraction.contraction.operand_indices[1]
+                .iter()
+                .collect();
             let new_rhs_str: String = rhs_desired.iter().collect();
-            let einsum_string_rhs = format!(
-                "{}->{}",
-                &sized_contraction.contraction.operand_indices[1], new_rhs_str
-            );
+            let einsum_string_rhs = format!("{}->{}", rhs_str, new_rhs_str);
             let output_str: String = sized_contraction
                 .contraction
                 .output_indices
@@ -1254,22 +1256,6 @@ where
             einsum_pair_allused_deduped_indices(&sc, lhs, &rhs_collapsed)
         }
     }
-}
-
-pub fn einsum_pair_str<A, S, S2, D, E>(
-    einsum_str: &str,
-    lhs: &ArrayBase<S, D>,
-    rhs: &ArrayBase<S2, E>,
-) -> ArrayD<A>
-where
-    A: LinalgScalar,
-    S: Data<Elem = A>,
-    S2: Data<Elem = A>,
-    D: Dimension,
-    E: Dimension,
-{
-    let sc = validate_and_size(einsum_str, &[lhs, rhs]).unwrap();
-    einsum_pair(&sc, lhs, rhs)
 }
 
 pub fn einsum_path<A>(path: &EinsumPath, operands: &[&ArrayLike<A>]) -> ArrayD<A>
@@ -1307,9 +1293,9 @@ where
     result
 }
 
-fn get_remaining_indices(operand_indices: &[String], output_indices: &[char]) -> HashSet<char> {
+fn get_remaining_indices(operand_indices: &[Vec<char>], output_indices: &[char]) -> HashSet<char> {
     let mut result: HashSet<char> = HashSet::new();
-    for c in operand_indices.iter().flat_map(|s| s.chars()) {
+    for &c in operand_indices.iter().flat_map(|s| s.iter()) {
         result.insert(c);
     }
     for &c in output_indices.iter() {
@@ -1318,9 +1304,9 @@ fn get_remaining_indices(operand_indices: &[String], output_indices: &[char]) ->
     result
 }
 
-fn get_existing_indices(lhs_indices: &HashSet<char>, rhs_indices: &str) -> HashSet<char> {
+fn get_existing_indices(lhs_indices: &HashSet<char>, rhs_indices: &[char]) -> HashSet<char> {
     let mut result: HashSet<char> = lhs_indices.clone();
-    for c in rhs_indices.chars() {
+    for &c in rhs_indices.iter() {
         result.insert(c);
     }
     result
@@ -1350,7 +1336,8 @@ fn generate_naive_path(sized_contraction: &SizedContraction) -> EinsumPath {
         }
         _ => {
             let mut lhs_indices: HashSet<char> = sized_contraction.contraction.operand_indices[0]
-                .chars()
+                .iter()
+                .cloned()
                 .collect();
             let rhs_indices = &sized_contraction.contraction.operand_indices[1];
             let existing_indices = get_existing_indices(&lhs_indices, rhs_indices);
@@ -1363,10 +1350,11 @@ fn generate_naive_path(sized_contraction: &SizedContraction) -> EinsumPath {
                 .cloned()
                 .collect();
             let mut output_str: String = output_indices.iter().collect();
-            let einsum_str = format!(
-                "{},{}->{}",
-                &sized_contraction.contraction.operand_indices[0], &rhs_indices, &output_str
-            );
+            let lhs_str: String = sized_contraction.contraction.operand_indices[0]
+                .iter()
+                .collect();
+            let rhs_str: String = rhs_indices.iter().collect();
+            let einsum_str = format!("{},{}->{}", &lhs_str, &rhs_str, &output_str);
             let contraction = validate(&einsum_str).unwrap();
             let mut output_size: HashMap<char, usize> = sized_contraction.output_size.clone();
             output_size.retain(|k, _| existing_indices.contains(k));
@@ -1401,7 +1389,8 @@ fn generate_naive_path(sized_contraction: &SizedContraction) -> EinsumPath {
                     output_indices = sized_contraction.contraction.output_indices.clone();
                 }
                 output_str = output_indices.iter().collect();
-                let einsum_str = format!("{},{}->{}", &lhs_str, &rhs_indices, &output_str);
+                let rhs_str: String = rhs_indices.iter().collect();
+                let einsum_str = format!("{},{}->{}", &lhs_str, &rhs_str, &output_str);
                 let contraction = validate(&einsum_str).unwrap();
                 let mut output_size: HashMap<char, usize> = sized_contraction.output_size.clone();
                 output_size.retain(|k, _| existing_indices.contains(k));
@@ -1434,18 +1423,26 @@ pub fn generate_optimized_path(
 
 }
 
-pub fn einsum_sc<A>(sized_contraction: &SizedContraction, operands: &[&ArrayLike<A>]) -> ArrayD<A>
-where
-    A: LinalgScalar,
-{
+pub fn einsum_sc<A: LinalgScalar>(
+    sized_contraction: &SizedContraction,
+    operands: &[&ArrayLike<A>],
+) -> ArrayD<A> {
     let path = generate_optimized_path(sized_contraction, OptimizationMethod::Naive);
     println!("{:?}", path);
     einsum_path(&path, operands)
 }
 
+pub fn einsum<A: LinalgScalar>(
+    input_string: &str,
+    operands: &[&dyn ArrayLike<A>],
+) -> Result<ArrayD<A>, &'static str> {
+    let sized_contraction = validate_and_size(input_string, operands)?;
+    Ok(einsum_sc(&sized_contraction, operands))
+}
+
 //////// Slow stuff below here ////////
 
-fn make_index(indices: &str, bindings: &HashMap<char, usize>) -> IxDyn {
+fn make_index(indices: &[char], bindings: &HashMap<char, usize>) -> IxDyn {
     ////// PYTHON: ///////////////////
     // def make_tuple(
     //     indices,
@@ -1454,15 +1451,15 @@ fn make_index(indices: &str, bindings: &HashMap<char, usize>) -> IxDyn {
     //     return tuple([bindings[x] for x in indices])
     //////////////////////////////////
     let mut v: Vec<usize> = Vec::new();
-    for i in indices.chars() {
-        v.push(bindings[&i])
+    for c in indices.iter() {
+        v.push(bindings[c])
     }
     IxDyn(&v)
 }
 
 fn partial_einsum_inner_loop<A: LinalgScalar>(
     operands: &[&ArrayViewD<A>],
-    operand_indices: &Vec<String>,
+    operand_indices: &[Vec<char>],
     bound_indices: &HashMap<char, usize>,
     axis_lengths: &HashMap<char, usize>,
     free_summation_indices: &[char],
@@ -1517,7 +1514,7 @@ fn partial_einsum_inner_loop<A: LinalgScalar>(
 
 fn partial_einsum_outer_loop<A: LinalgScalar>(
     operands: &[&ArrayViewD<A>],
-    operand_indices: &Vec<String>,
+    operand_indices: &[Vec<char>],
     bound_indices: &HashMap<char, usize>,
     free_output_indices: &[char],
     axis_lengths: &HashMap<char, usize>,

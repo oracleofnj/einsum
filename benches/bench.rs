@@ -27,7 +27,7 @@ fn bench_multiply_tiny(b: &mut Bencher) {
     let m1 = rand_array((3, 4));
     let m2 = rand_array((4, 5));
 
-    b.iter(|| einsum_pair_str("ij,jk->ik", &m1, &m2));
+    b.iter(|| einsum("ij,jk->ik", &[&m1, &m2]));
 }
 
 #[bench]
@@ -43,7 +43,7 @@ fn bench_multiply_medium(b: &mut Bencher) {
     let m1 = rand_array((30, 40));
     let m2 = rand_array((40, 50));
 
-    b.iter(|| einsum_pair_str("ij,jk->ik", &m1, &m2));
+    b.iter(|| einsum("ij,jk->ik", &[&m1, &m2]));
 }
 
 #[bench]
@@ -59,5 +59,5 @@ fn bench_multiply_large(b: &mut Bencher) {
     let m1 = rand_array((300, 400));
     let m2 = rand_array((400, 500));
 
-    b.iter(|| einsum_pair_str("ij,jk->ik", &m1, &m2));
+    b.iter(|| einsum("ij,jk->ik", &[&m1, &m2]));
 }
