@@ -61,3 +61,19 @@ fn bench_multiply_large(b: &mut Bencher) {
 
     b.iter(|| einsum("ij,jk->ik", &[&m1, &m2]));
 }
+
+#[bench]
+fn bench_hadamard_builtin_large(b: &mut Bencher) {
+    let m1 = rand_array((300, 400));
+    let m2 = rand_array((300, 400));
+
+    b.iter(|| (&m1 * &m2));
+}
+
+#[bench]
+fn bench_hadamard_large(b: &mut Bencher) {
+    let m1 = rand_array((300, 400));
+    let m2 = rand_array((300, 400));
+
+    b.iter(|| einsum("ij,ij->ij", &[&m1, &m2]));
+}
