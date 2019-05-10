@@ -843,14 +843,16 @@ where
             output_shape.push(axis_length);
         }
     }
-    let matrix1 = Array::from_shape_vec(lhs.raw_dim(), lhs.iter().cloned().collect())
-        .unwrap()
-        .into_shape((len_uncontracted_lhs, len_contracted_lhs))
-        .unwrap();
-    let matrix2 = Array::from_shape_vec(rhs.raw_dim(), rhs.iter().cloned().collect())
-        .unwrap()
-        .into_shape((len_contracted_rhs, len_uncontracted_rhs))
-        .unwrap();
+    let matrix1 = Array::from_shape_vec(
+        [len_uncontracted_lhs, len_contracted_lhs],
+        lhs.iter().cloned().collect(),
+    )
+    .unwrap();
+    let matrix2 = Array::from_shape_vec(
+        [len_contracted_rhs, len_uncontracted_rhs],
+        rhs.iter().cloned().collect(),
+    )
+    .unwrap();
 
     matrix1
         .dot(&matrix2)
