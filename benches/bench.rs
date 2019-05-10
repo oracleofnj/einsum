@@ -63,17 +63,17 @@ fn bench_multiply_large(b: &mut Bencher) {
 }
 
 #[bench]
-fn bench_hadamard_builtin_medium(b: &mut Bencher) {
-    let m1 = rand_array((30, 40));
-    let m2 = rand_array((30, 40));
+fn bench_hadamard_builtin_large(b: &mut Bencher) {
+    let m1 = rand_array((300, 400));
+    let m2 = rand_array((300, 400));
 
     b.iter(|| (&m1 * &m2));
 }
 
 #[bench]
-fn bench_hadamard_medium(b: &mut Bencher) {
-    let m1 = rand_array((30, 40));
-    let m2 = rand_array((30, 40));
+fn bench_hadamard_large(b: &mut Bencher) {
+    let m1 = rand_array((300, 400));
+    let m2 = rand_array((300, 400));
 
     b.iter(|| einsum("ij,ij->ij", &[&m1, &m2]));
 }
@@ -86,7 +86,7 @@ fn bench_sum_builtin_huge(b: &mut Bencher) {
 }
 
 #[bench]
-fn bench_sum_medium(b: &mut Bencher) {
+fn bench_sum_huge(b: &mut Bencher) {
     let m1 = rand_array((3000, 4000));
 
     b.iter(|| einsum("ij->", &[&m1]));

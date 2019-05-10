@@ -931,45 +931,111 @@ where
     // afterwards
 
     assert_eq!(classified_pair_contraction.stack_indices.len(), 0);
-
-    let mut lhs_axes = Vec::new();
-    let mut rhs_axes = Vec::new();
-    for (_, contracted_index) in classified_pair_contraction.contracted_indices.iter() {
-        lhs_axes.push(Axis(contracted_index.lhs_position));
-        rhs_axes.push(Axis(contracted_index.rhs_position));
-    }
-
-    let mut both_outer_indices = Vec::new();
-    for idx in classified_pair_contraction.lhs_indices.iter() {
-        if let PairIndexInfo::OuterInfo(OuterIndex {
-            input_position: OuterIndexPosition::LHS(_),
-            output_position: _,
-        }) = idx.index_info
-        {
-            both_outer_indices.push(idx.index);
+    match (
+        classified_pair_contraction.contracted_indices.len(),
+        classified_pair_contraction.lhs_indices.len(),
+        classified_pair_contraction.rhs_indices.len(),
+    ) {
+        (0, 0, 0) => {
+            let lhs_0d: A = lhs.first().unwrap().clone();
+            let rhs_0d: A = rhs.first().unwrap().clone();
+            arr0(lhs_0d * rhs_0d).into_dyn()
         }
-    }
-    for idx in classified_pair_contraction.rhs_indices.iter() {
-        if let PairIndexInfo::OuterInfo(OuterIndex {
-            input_position: OuterIndexPosition::RHS(_),
-            output_position: _,
-        }) = idx.index_info
-        {
-            both_outer_indices.push(idx.index);
-        }
-    }
-    let permutation: Vec<usize> = classified_pair_contraction
-        .output_indices
-        .iter()
-        .map(|c| {
-            both_outer_indices
+        (0, 0, _) => {
+            let lhs_0d: A = lhs.first().unwrap().clone();
+            let mut both_outer_indices = Vec::new();
+            for idx in classified_pair_contraction.rhs_indices.iter() {
+                if let PairIndexInfo::OuterInfo(OuterIndex {
+                    input_position: OuterIndexPosition::RHS(_),
+                    output_position: _,
+                }) = idx.index_info
+                {
+                    both_outer_indices.push(idx.index);
+                }
+            }
+            let permutation: Vec<usize> = classified_pair_contraction
+                .output_indices
                 .iter()
-                .position(|&x| x == c.index)
-                .unwrap()
-        })
-        .collect();
+                .map(|c| {
+                    both_outer_indices
+                        .iter()
+                        .position(|&x| x == c.index)
+                        .unwrap()
+                })
+                .collect();
 
-    tensordot(lhs, rhs, &lhs_axes, &rhs_axes).permuted_axes(permutation)
+            rhs.mapv(|x| x * lhs_0d)
+                .into_dyn()
+                .permuted_axes(permutation)
+        }
+        (0, _, 0) => {
+            let rhs_0d: A = rhs.first().unwrap().clone();
+            let mut both_outer_indices = Vec::new();
+            for idx in classified_pair_contraction.lhs_indices.iter() {
+                if let PairIndexInfo::OuterInfo(OuterIndex {
+                    input_position: OuterIndexPosition::LHS(_),
+                    output_position: _,
+                }) = idx.index_info
+                {
+                    both_outer_indices.push(idx.index);
+                }
+            }
+            let permutation: Vec<usize> = classified_pair_contraction
+                .output_indices
+                .iter()
+                .map(|c| {
+                    both_outer_indices
+                        .iter()
+                        .position(|&x| x == c.index)
+                        .unwrap()
+                })
+                .collect();
+
+            lhs.mapv(|x| x * rhs_0d)
+                .into_dyn()
+                .permuted_axes(permutation)
+        }
+        _ => {
+            let mut lhs_axes = Vec::new();
+            let mut rhs_axes = Vec::new();
+            for (_, contracted_index) in classified_pair_contraction.contracted_indices.iter() {
+                lhs_axes.push(Axis(contracted_index.lhs_position));
+                rhs_axes.push(Axis(contracted_index.rhs_position));
+            }
+
+            let mut both_outer_indices = Vec::new();
+            for idx in classified_pair_contraction.lhs_indices.iter() {
+                if let PairIndexInfo::OuterInfo(OuterIndex {
+                    input_position: OuterIndexPosition::LHS(_),
+                    output_position: _,
+                }) = idx.index_info
+                {
+                    both_outer_indices.push(idx.index);
+                }
+            }
+            for idx in classified_pair_contraction.rhs_indices.iter() {
+                if let PairIndexInfo::OuterInfo(OuterIndex {
+                    input_position: OuterIndexPosition::RHS(_),
+                    output_position: _,
+                }) = idx.index_info
+                {
+                    both_outer_indices.push(idx.index);
+                }
+            }
+            let permutation: Vec<usize> = classified_pair_contraction
+                .output_indices
+                .iter()
+                .map(|c| {
+                    both_outer_indices
+                        .iter()
+                        .position(|&x| x == c.index)
+                        .unwrap()
+                })
+                .collect();
+
+            tensordot(lhs, rhs, &lhs_axes, &rhs_axes).permuted_axes(permutation)
+        }
+    }
 }
 
 fn move_stack_indices_to_front<A, S, D>(
@@ -1430,7 +1496,6 @@ pub fn einsum_sc<A: LinalgScalar>(
     operands: &[&ArrayLike<A>],
 ) -> ArrayD<A> {
     let path = generate_optimized_path(sized_contraction, OptimizationMethod::Naive);
-    println!("{:?}", path);
     einsum_path(&path, operands)
 }
 
