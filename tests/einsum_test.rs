@@ -4,6 +4,48 @@ use ndarray_rand::RandomExt;
 use rand::distributions::Uniform;
 const TOL: f64 = 1e-10;
 
+// TODO: Make these real tests
+fn _test_parses() {
+    for test_string in &vec![
+        // Explicit
+        "i->",
+        "ij->",
+        "i->i",
+        "ij,ij->ij",
+        "ij,ij->",
+        "ij,kl->",
+        "ij,jk->ik",
+        "ijk,jkl,klm->im",
+        "ij,jk->ki",
+        "ij,ja->ai",
+        "ij,ja->ia",
+        "ii->i",
+
+        // Implicit
+        "ij,k",
+        "i",
+        "ii",
+        "ijj",
+        "i,j,klm,nop",
+        "ij,jk",
+        "ij,ja",
+
+        // Illegal
+        "->i",
+        "i,",
+        "->",
+        "i,,,j->k",
+
+        // Legal parse but illegal outputs
+        "i,j,k,l,m->p",
+        "i,j->ijj",
+    ] {
+        println!("Input string: {}", test_string);
+        println!("{}", einsum::validate_as_json(test_string));
+        println!("");
+    }
+}
+
 fn rand_array<Sh, D: Dimension>(shape: Sh) -> ArrayBase<ndarray::OwnedRepr<f64>, D>
 where
     Sh: ShapeBuilder<Dim = D>,
