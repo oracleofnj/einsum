@@ -180,6 +180,17 @@ pub enum OptimizationMethod {
     Branch,
 }
 
+struct MultiAxisIterator<'a, A> {
+    carrying: bool,
+    ndim: usize,
+    // axes: Vec<usize>,
+    renumbered_axes: Vec<usize>,
+    shape: Vec<usize>,
+    positions: Vec<usize>,
+    underlying: &'a ArrayViewD<'a, A>,
+    // subviews: Vec<ArrayViewD<'a, A>>,
+}
+
 pub trait ArrayLike<A> {
     fn into_dyn_view(&self) -> ArrayView<A, IxDyn>;
 }
@@ -191,6 +202,73 @@ where
 {
     fn into_dyn_view(&self) -> ArrayView<A, IxDyn> {
         self.view().into_dyn()
+    }
+}
+
+impl<'a, A> MultiAxisIterator<'a, A> {
+    fn new(base: &'a ArrayViewD<'a, A>, axes: &[usize]) -> MultiAxisIterator<'a, A> {
+        let ndim = axes.len();
+        // let axes: Vec<usize> = axes.to_vec();
+        let renumbered_axes: Vec<usize> = axes
+            .iter()
+            .enumerate()
+            .map(|(i, &v)| v - axes[0..i].iter().filter(|&&x| x < v).count())
+            .collect();
+        let shape: Vec<usize> = axes
+            .iter()
+            .map(|&x| base.shape().get(x).unwrap())
+            .cloned()
+            .collect();
+        let positions = vec![0; shape.len()];
+
+        // let mut subviews = Vec::new();
+        // let mut axis_iters = Vec::new();
+        //
+        // for (ax_num, &ax) in axes.iter().enumerate() {
+        //     let mut subview = base.view();
+        //     for i in 0..ax_num {
+        //         subview = subview.index_axis_move(Axis(0), 0);
+        //     }
+        //     subviews.push(subview);
+        // }
+
+        MultiAxisIterator {
+            underlying: base,
+            carrying: false,
+            ndim,
+            // axes,
+            renumbered_axes,
+            shape,
+            positions,
+            // subviews,
+        }
+    }
+}
+
+impl<'a, A> Iterator for MultiAxisIterator<'a, A> {
+    type Item = ArrayViewD<'a, A>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if !self.carrying {
+            let mut view = self.underlying.view();
+            for (&ax, &pos) in self.renumbered_axes.iter().zip(&self.positions) {
+                view = view.index_axis_move(Axis(ax), pos);
+            }
+            self.carrying = true;
+            for i in 0..self.ndim {
+                let axis = self.ndim - i - 1;
+                if self.positions[axis] == self.shape[axis] - 1 {
+                    self.positions[axis] = 0;
+                } else {
+                    self.positions[axis] += 1;
+                    self.carrying = false;
+                    break;
+                }
+            }
+            Some(view)
+        } else {
+            None
+        }
     }
 }
 
@@ -1038,41 +1116,41 @@ where
     }
 }
 
-fn move_stack_indices_to_front<A, S, D>(
-    input_indices: &[IndexWithPairInfo],
-    stack_index_order: &[char],
-    tensor: &ArrayBase<S, D>,
-) -> ArrayD<A>
-where
-    A: LinalgScalar,
-    S: Data<Elem = A>,
-    D: Dimension,
-{
-    let mut permutation: Vec<usize> = Vec::new();
-    let mut output_shape: Vec<usize> = Vec::new();
-    output_shape.push(1);
-
-    for &c in stack_index_order {
-        permutation.push(input_indices.iter().position(|idx| idx.index == c).unwrap());
-    }
-
-    for (i, (idx, &axis_length)) in input_indices.iter().zip(tensor.shape().iter()).enumerate() {
-        if let PairIndexInfo::StackInfo(_) = idx.index_info {
-            output_shape[0] *= axis_length;
-        } else {
-            permutation.push(i);
-            output_shape.push(axis_length);
-        }
-    }
-
-    let temp_result = tensor
-        .view()
-        .into_dyn()
-        .into_owned()
-        .permuted_axes(permutation);
-
-    Array::from_shape_vec(IxDyn(&output_shape), temp_result.iter().cloned().collect()).unwrap()
-}
+// fn move_stack_indices_to_front<A, S, D>(
+//     input_indices: &[IndexWithPairInfo],
+//     stack_index_order: &[char],
+//     tensor: &ArrayBase<S, D>,
+// ) -> ArrayD<A>
+// where
+//     A: LinalgScalar,
+//     S: Data<Elem = A>,
+//     D: Dimension,
+// {
+//     let mut permutation: Vec<usize> = Vec::new();
+//     let mut output_shape: Vec<usize> = Vec::new();
+//     output_shape.push(1);
+//
+//     for &c in stack_index_order {
+//         permutation.push(input_indices.iter().position(|idx| idx.index == c).unwrap());
+//     }
+//
+//     for (i, (idx, &axis_length)) in input_indices.iter().zip(tensor.shape().iter()).enumerate() {
+//         if let PairIndexInfo::StackInfo(_) = idx.index_info {
+//             output_shape[0] *= axis_length;
+//         } else {
+//             permutation.push(i);
+//             output_shape.push(axis_length);
+//         }
+//     }
+//
+//     let temp_result = tensor
+//         .view()
+//         .into_dyn()
+//         .into_owned()
+//         .permuted_axes(permutation);
+//
+//     Array::from_shape_vec(IxDyn(&output_shape), temp_result.iter().cloned().collect()).unwrap()
+// }
 
 fn einsum_pair_allused_deduped_indices<A, S, S2, D, E>(
     sized_contraction: &SizedContraction,
@@ -1107,20 +1185,39 @@ where
                 stack_index_order.push(idx.index);
             }
         }
-        let lhs_reshaped = move_stack_indices_to_front(&cpc.lhs_indices, &stack_index_order, &lhs);
-        let rhs_reshaped = move_stack_indices_to_front(&cpc.rhs_indices, &stack_index_order, &rhs);
+        // OLD:
+        // let lhs_reshaped = move_stack_indices_to_front(&cpc.lhs_indices, &stack_index_order, &lhs);
+        // let rhs_reshaped = move_stack_indices_to_front(&cpc.rhs_indices, &stack_index_order, &rhs);
+
+        // NEW:
+        let mut lhs_stack_axes = Vec::new();
+        let mut rhs_stack_axes = Vec::new();
+        for &c in stack_index_order.iter() {
+            lhs_stack_axes.push(
+                cpc.lhs_indices
+                    .iter()
+                    .position(|idx| idx.index == c)
+                    .unwrap(),
+            );
+            rhs_stack_axes.push(
+                cpc.rhs_indices
+                    .iter()
+                    .position(|idx| idx.index == c)
+                    .unwrap(),
+            );
+        }
+        let lhs_dyn_view = lhs.view().into_dyn();
+        let rhs_dyn_view = rhs.view().into_dyn();
+        let lhs_iter = MultiAxisIterator::new(&lhs_dyn_view, &lhs_stack_axes);
+        let rhs_iter = MultiAxisIterator::new(&rhs_dyn_view, &rhs_stack_axes);
 
         // (2) Construct the non-stacked ClassifiedDedupedPairContraction
         let mut unstacked_lhs_chars = Vec::new();
         let mut unstacked_rhs_chars = Vec::new();
         let mut unstacked_output_chars = Vec::new();
         let mut summation_chars = Vec::new();
-        let mut num_slices = 1;
         for idx in cpc.lhs_indices.iter() {
             match idx.index_info {
-                PairIndexInfo::StackInfo(_) => {
-                    num_slices *= sized_contraction.output_size[&idx.index];
-                }
                 PairIndexInfo::OuterInfo(_) => {
                     unstacked_lhs_chars.push(idx.index);
                 }
@@ -1128,6 +1225,7 @@ where
                     unstacked_lhs_chars.push(idx.index);
                     summation_chars.push(idx.index);
                 }
+                _ => {}
             }
         }
         for idx in cpc.rhs_indices.iter() {
@@ -1154,12 +1252,13 @@ where
 
         // (3) for i = 0..N, assign the result of einsum_pair_allused_nostacks_classified_deduped_indices
         //     to unshaped_result[i]
-        let slices: Vec<_> = (0..num_slices)
-            .map(|i| {
+        let slices: Vec<_> = lhs_iter
+            .zip(rhs_iter)
+            .map(|(lhs_subview, rhs_subview)| {
                 einsum_pair_allused_nostacks_classified_deduped_indices(
                     &new_cdpc,
-                    &lhs_reshaped.index_axis(Axis(0), i),
-                    &rhs_reshaped.index_axis(Axis(0), i),
+                    &lhs_subview,
+                    &rhs_subview,
                 )
                 .insert_axis(Axis(0))
             })
