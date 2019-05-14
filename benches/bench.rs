@@ -95,15 +95,15 @@ fn bench_hadamard_transpose_large(b: &mut Bencher) {
 }
 
 #[bench]
-fn bench_sum_builtin_huge(b: &mut Bencher) {
-    let m1 = rand_array((3000, 4000));
+fn bench_sum_builtin_large(b: &mut Bencher) {
+    let m1 = rand_array((300, 400));
 
     b.iter(|| m1.sum());
 }
 
 #[bench]
-fn bench_sum_huge(b: &mut Bencher) {
-    let m1 = rand_array((3000, 4000));
+fn bench_sum_large(b: &mut Bencher) {
+    let m1 = rand_array((300, 400));
 
     b.iter(|| einsum("ij->", &[&m1]));
 }

@@ -684,38 +684,30 @@ fn generate_classified_pair_contraction(
     }
 }
 
-pub fn move_output_indices_to_front<A: LinalgScalar>(
+pub fn move_output_indices_to_front<'a, A: LinalgScalar>(
     input_indices: &[IndexWithSingletonInfo],
     output_index_order: &[char],
-    tensor: &ArrayViewD<A>,
-) -> ArrayD<A> {
+    tensor: &'a ArrayViewD<'a, A>,
+) -> ArrayViewD<'a, A> {
     let mut permutation: Vec<usize> = Vec::new();
-    let mut output_shape: Vec<usize> = Vec::new();
-    let input_shape = tensor.shape();
-    let mut sum_size = 1;
 
     for &c in output_index_order {
         let input_pos = input_indices.iter().position(|idx| idx.index == c).unwrap();
         permutation.push(input_pos);
-        output_shape.push(input_shape[input_pos]);
     }
 
-    for (i, (idx, &axis_length)) in input_indices.iter().zip(input_shape.iter()).enumerate() {
+    for (i, idx) in input_indices.iter().enumerate() {
         if let SingletonIndexInfo::SummedInfo(_) = idx.index_info {
-            sum_size *= axis_length;
             permutation.push(i);
         }
     }
-    output_shape.push(sum_size);
 
-    let temp_result = tensor.view().permuted_axes(permutation);
-
-    Array::from_shape_vec(IxDyn(&output_shape), temp_result.iter().cloned().collect()).unwrap()
+    tensor.view().permuted_axes(permutation)
 }
 
-fn einsum_singleton_norepeats<A: LinalgScalar>(
+fn einsum_singleton_norepeats<'a, A: LinalgScalar>(
     csc: &ClassifiedSingletonContraction,
-    tensor: &ArrayViewD<A>,
+    tensor: &'a ArrayViewD<'a, A>,
 ) -> ArrayD<A> {
     // Handles the case where it's ijk->ik; just sums
     assert_eq!(csc.diagonalized_indices.len(), 0);
@@ -728,9 +720,17 @@ fn einsum_singleton_norepeats<A: LinalgScalar>(
     );
 
     let output_index_order: Vec<char> = csc.output_indices.iter().map(|x| x.index).collect();
-    let reshaped_input =
+    let permuted_input =
         move_output_indices_to_front(&csc.input_indices, &output_index_order, tensor);
-    reshaped_input.sum_axis(Axis(csc.output_indices.len()))
+    if csc.summed_indices.len() == 0 {
+        permuted_input.into_owned()
+    } else {
+        let mut result = permuted_input.sum_axis(Axis(csc.output_indices.len()));
+        for _ in 1..csc.summed_indices.len() {
+            result = result.sum_axis(Axis(csc.output_indices.len()));
+        }
+        result
+    }
 }
 
 // TODO: Replace this by calculating the right dimensions and strides to use

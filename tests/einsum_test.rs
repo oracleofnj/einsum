@@ -198,6 +198,17 @@ fn it_collapses_a_singleton_with_multiple_repeats_that_get_summed() {
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
 
+#[test]
+fn it_sums_a_singleton() {
+    // ijk->
+    let s = rand_array((2, 3, 4));
+
+    let correct_answer = arr0(s.sum());
+
+    let sc = validate_and_size("ijk->", &[&s]).unwrap();
+    let collapsed = einsum_sc(&sc, &[&s]);
+    assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
+}
 
 #[test]
 fn it_collapses_a_singleton_with_multiple_sums() {
