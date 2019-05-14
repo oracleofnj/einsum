@@ -30,4 +30,3 @@ crate-type = ["cdylib", "rlib"]
 [profile.release]
 debug = true
 lto = true
-opt-level = 's'

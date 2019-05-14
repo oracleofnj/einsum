@@ -432,6 +432,7 @@ pub fn validate_and_size<A>(
     validate_and_size_from_shapes(input_string, &get_operand_shapes(operands))
 }
 
+#[inline(never)]
 fn generate_info_vector_for_singleton(
     operand_indices: &[char],
     untouched_indices: &UntouchedIndexMap,
@@ -462,6 +463,7 @@ fn generate_info_vector_for_singleton(
     indices
 }
 
+#[inline(never)]
 fn generate_classified_singleton_contraction(
     sized_contraction: &SizedContraction,
 ) -> ClassifiedSingletonContraction {
@@ -547,6 +549,7 @@ fn generate_classified_singleton_contraction(
     }
 }
 
+#[inline(never)]
 fn generate_info_vector_for_pair(
     operand_indices: &[char],
     stack_indices: &StackIndexMap,
@@ -577,6 +580,7 @@ fn generate_info_vector_for_pair(
     indices
 }
 
+#[inline(never)]
 fn generate_classified_pair_contraction(
     sized_contraction: &SizedContraction,
 ) -> ClassifiedDedupedPairContraction {
@@ -684,6 +688,7 @@ fn generate_classified_pair_contraction(
     }
 }
 
+#[inline(never)]
 fn einsum_singleton_sum_one_index<A>(
     tensor: ArrayD<A>,
     csc: &mut ClassifiedSingletonContraction,
@@ -733,6 +738,7 @@ where
     tensor.sum_axis(Axis(pos))
 }
 
+#[inline(never)]
 fn einsum_singleton_norepeats<A>(
     csc: &ClassifiedSingletonContraction,
     tensor: &ArrayViewD<A>,
@@ -776,6 +782,7 @@ where
 
 // TODO: Replace this by calculating the right dimensions and strides to use
 // TODO: Take a &mut ClassifiedSingletonContraction and mutate it
+#[inline(never)]
 fn diagonalize_singleton<A, S, D>(
     tensor: &ArrayBase<S, D>,
     axes: &[usize],
@@ -786,6 +793,7 @@ where
     S: Data<Elem = A>,
     D: Dimension,
 {
+    // TODO: Replace this now that I understand how to use assign()
     assert!(axes.len() > 0);
     let axis_length = tensor.shape()[axes[0]];
     let slices: Vec<_> = (0..axis_length)
@@ -805,6 +813,7 @@ where
 
 // TODO: Take a &mut ClassifiedSingletonContraction and mutate it instead
 // of mutating operand_indices
+#[inline(never)]
 fn diagonalize_singleton_char<A>(
     tensor: &mut ArrayD<A>,
     operand_indices: &mut Vec<char>,
@@ -831,6 +840,7 @@ fn diagonalize_singleton_char<A>(
 // TODO: Figure out correct magic with strides and dimensions
 // TODO: Take a ClassifiedSingletonContraction instead of a
 //       SizedContraction
+#[inline(never)]
 pub fn einsum_singleton<A, S, D>(
     sized_contraction: &SizedContraction,
     tensor: &ArrayBase<S, D>,
@@ -880,6 +890,7 @@ where
     }
 }
 
+#[inline(never)]
 fn tensordot_fixed_order<A, S, S2, D, E>(
     lhs: &ArrayBase<S, D>,
     rhs: &ArrayBase<S2, E>,
@@ -938,6 +949,7 @@ where
         .unwrap()
 }
 
+#[inline(never)]
 pub fn tensordot<A, S, S2, D, E>(
     lhs: &ArrayBase<S, D>,
     rhs: &ArrayBase<S2, E>,
@@ -985,6 +997,7 @@ where
     tensordot_fixed_order(&rolled_lhs, &rolled_rhs, lhs_axes.len())
 }
 
+#[inline(never)]
 fn einsum_pair_allused_nostacks_classified_deduped_indices<A, S, S2, D, E>(
     classified_pair_contraction: &ClassifiedDedupedPairContraction,
     lhs: &ArrayBase<S, D>,
@@ -1116,42 +1129,43 @@ where
     }
 }
 
-// fn move_stack_indices_to_front<A, S, D>(
-//     input_indices: &[IndexWithPairInfo],
-//     stack_index_order: &[char],
-//     tensor: &ArrayBase<S, D>,
-// ) -> ArrayD<A>
-// where
-//     A: LinalgScalar,
-//     S: Data<Elem = A>,
-//     D: Dimension,
-// {
-//     let mut permutation: Vec<usize> = Vec::new();
-//     let mut output_shape: Vec<usize> = Vec::new();
-//     output_shape.push(1);
-//
-//     for &c in stack_index_order {
-//         permutation.push(input_indices.iter().position(|idx| idx.index == c).unwrap());
-//     }
-//
-//     for (i, (idx, &axis_length)) in input_indices.iter().zip(tensor.shape().iter()).enumerate() {
-//         if let PairIndexInfo::StackInfo(_) = idx.index_info {
-//             output_shape[0] *= axis_length;
-//         } else {
-//             permutation.push(i);
-//             output_shape.push(axis_length);
-//         }
-//     }
-//
-//     let temp_result = tensor
-//         .view()
-//         .into_dyn()
-//         .into_owned()
-//         .permuted_axes(permutation);
-//
-//     Array::from_shape_vec(IxDyn(&output_shape), temp_result.iter().cloned().collect()).unwrap()
-// }
+fn move_stack_indices_to_front<A, S, D>(
+    input_indices: &[IndexWithPairInfo],
+    stack_index_order: &[char],
+    tensor: &ArrayBase<S, D>,
+) -> ArrayD<A>
+where
+    A: LinalgScalar,
+    S: Data<Elem = A>,
+    D: Dimension,
+{
+    let mut permutation: Vec<usize> = Vec::new();
+    let mut output_shape: Vec<usize> = Vec::new();
+    output_shape.push(1);
 
+    for &c in stack_index_order {
+        permutation.push(input_indices.iter().position(|idx| idx.index == c).unwrap());
+    }
+
+    for (i, (idx, &axis_length)) in input_indices.iter().zip(tensor.shape().iter()).enumerate() {
+        if let PairIndexInfo::StackInfo(_) = idx.index_info {
+            output_shape[0] *= axis_length;
+        } else {
+            permutation.push(i);
+            output_shape.push(axis_length);
+        }
+    }
+
+    let temp_result = tensor
+        .view()
+        .into_dyn()
+        .into_owned()
+        .permuted_axes(permutation);
+
+    Array::from_shape_vec(IxDyn(&output_shape), temp_result.iter().cloned().collect()).unwrap()
+}
+
+#[inline(never)]
 fn einsum_pair_allused_deduped_indices<A, S, S2, D, E>(
     sized_contraction: &SizedContraction,
     lhs: &ArrayBase<S, D>,
@@ -1186,8 +1200,8 @@ where
             }
         }
         // OLD:
-        // let lhs_reshaped = move_stack_indices_to_front(&cpc.lhs_indices, &stack_index_order, &lhs);
-        // let rhs_reshaped = move_stack_indices_to_front(&cpc.rhs_indices, &stack_index_order, &rhs);
+        let lhs_reshaped = move_stack_indices_to_front(&cpc.lhs_indices, &stack_index_order, &lhs);
+        let rhs_reshaped = move_stack_indices_to_front(&cpc.rhs_indices, &stack_index_order, &rhs);
 
         // NEW:
         let mut lhs_stack_axes = Vec::new();
@@ -1208,14 +1222,15 @@ where
         }
         let lhs_dyn_view = lhs.view().into_dyn();
         let rhs_dyn_view = rhs.view().into_dyn();
-        let lhs_iter = MultiAxisIterator::new(&lhs_dyn_view, &lhs_stack_axes);
-        let rhs_iter = MultiAxisIterator::new(&rhs_dyn_view, &rhs_stack_axes);
+        let mut lhs_iter = MultiAxisIterator::new(&lhs_dyn_view, &lhs_stack_axes);
+        let mut rhs_iter = MultiAxisIterator::new(&rhs_dyn_view, &rhs_stack_axes);
 
         // (2) Construct the non-stacked ClassifiedDedupedPairContraction
         let mut unstacked_lhs_chars = Vec::new();
         let mut unstacked_rhs_chars = Vec::new();
         let mut unstacked_output_chars = Vec::new();
         let mut summation_chars = Vec::new();
+        let mut num_subviews = 1;
         for idx in cpc.lhs_indices.iter() {
             match idx.index_info {
                 PairIndexInfo::OuterInfo(_) => {
@@ -1225,7 +1240,9 @@ where
                     unstacked_lhs_chars.push(idx.index);
                     summation_chars.push(idx.index);
                 }
-                _ => {}
+                PairIndexInfo::StackInfo(_) => {
+                    num_subviews *= sized_contraction.output_size[&idx.index];
+                }
             }
         }
         for idx in cpc.rhs_indices.iter() {
@@ -1252,31 +1269,18 @@ where
 
         // (3) for i = 0..N, assign the result of einsum_pair_allused_nostacks_classified_deduped_indices
         //     to unshaped_result[i]
-        let slices: Vec<_> = lhs_iter
-            .zip(rhs_iter)
-            .map(|(lhs_subview, rhs_subview)| {
-                einsum_pair_allused_nostacks_classified_deduped_indices(
-                    &new_cdpc,
-                    &lhs_subview,
-                    &rhs_subview,
-                )
-                .insert_axis(Axis(0))
-            })
-            .collect();
-        let slice_views: Vec<_> = slices.iter().map(|s| s.view()).collect();
-
-        // (5) Reshape into (...stacked indices, ...non-stacked output shape)
-        let temp_result = ndarray::stack(Axis(0), &slice_views).unwrap();
         let mut temp_shape: Vec<usize> = Vec::new();
-        let mut temp_indices: Vec<char> = Vec::new();
+        temp_shape.push(num_subviews);
+        let mut final_shape: Vec<usize> = Vec::new();
+        let mut intermediate_indices: Vec<char> = Vec::new();
         for (idx, c) in cpc
             .output_indices
             .iter()
             .zip(sized_contraction.contraction.output_indices.iter())
         {
             if let PairIndexInfo::StackInfo(_) = idx.index_info {
-                temp_shape.push(sized_contraction.output_size[c]);
-                temp_indices.push(*c);
+                final_shape.push(sized_contraction.output_size[c]);
+                intermediate_indices.push(*c);
             }
         }
         for (idx, c) in cpc
@@ -1287,11 +1291,28 @@ where
             if let PairIndexInfo::StackInfo(_) = idx.index_info {
             } else {
                 temp_shape.push(sized_contraction.output_size[c]);
-                temp_indices.push(*c);
+                final_shape.push(sized_contraction.output_size[c]);
+                intermediate_indices.push(*c);
             }
         }
+        let mut temp_result: ArrayD<A> = Array::zeros(IxDyn(&temp_shape));
+        for (mut output_subview, (lhs_subview, rhs_subview)) in temp_result
+            .outer_iter_mut()
+            .zip(lhs_reshaped.outer_iter().zip(rhs_reshaped.outer_iter()))
+        {
+            // let lhs_subview = lhs_iter.next().unwrap();
+            // let rhs_subview = rhs_iter.next().unwrap();
+            let output = einsum_pair_allused_nostacks_classified_deduped_indices(
+                &new_cdpc,
+                &lhs_subview,
+                &rhs_subview,
+            );
+            output_subview.assign(&output);
+        }
+
+        // (6) Permute into correct order
         let mut permutation: Vec<usize> = Vec::new();
-        for &c in temp_indices.iter() {
+        for &c in intermediate_indices.iter() {
             permutation.push(
                 sized_contraction
                     .contraction
@@ -1302,15 +1323,15 @@ where
             );
         }
 
-        // (6) Permute into correct order
         temp_result
-            .into_shape(IxDyn(&temp_shape))
+            .into_shape(IxDyn(&final_shape))
             .unwrap()
             .permuted_axes(permutation)
     }
 
 }
 
+#[inline(never)]
 pub fn einsum_pair<A, S, S2, D, E>(
     sized_contraction: &SizedContraction,
     lhs: &ArrayBase<S, D>,
