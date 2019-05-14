@@ -793,6 +793,7 @@ where
     S: Data<Elem = A>,
     D: Dimension,
 {
+    // TODO: Replace this now that I understand how to use assign()
     assert!(axes.len() > 0);
     let axis_length = tensor.shape()[axes[0]];
     let slices: Vec<_> = (0..axis_length)
@@ -1128,41 +1129,41 @@ where
     }
 }
 
-// fn move_stack_indices_to_front<A, S, D>(
-//     input_indices: &[IndexWithPairInfo],
-//     stack_index_order: &[char],
-//     tensor: &ArrayBase<S, D>,
-// ) -> ArrayD<A>
-// where
-//     A: LinalgScalar,
-//     S: Data<Elem = A>,
-//     D: Dimension,
-// {
-//     let mut permutation: Vec<usize> = Vec::new();
-//     let mut output_shape: Vec<usize> = Vec::new();
-//     output_shape.push(1);
-//
-//     for &c in stack_index_order {
-//         permutation.push(input_indices.iter().position(|idx| idx.index == c).unwrap());
-//     }
-//
-//     for (i, (idx, &axis_length)) in input_indices.iter().zip(tensor.shape().iter()).enumerate() {
-//         if let PairIndexInfo::StackInfo(_) = idx.index_info {
-//             output_shape[0] *= axis_length;
-//         } else {
-//             permutation.push(i);
-//             output_shape.push(axis_length);
-//         }
-//     }
-//
-//     let temp_result = tensor
-//         .view()
-//         .into_dyn()
-//         .into_owned()
-//         .permuted_axes(permutation);
-//
-//     Array::from_shape_vec(IxDyn(&output_shape), temp_result.iter().cloned().collect()).unwrap()
-// }
+fn move_stack_indices_to_front<A, S, D>(
+    input_indices: &[IndexWithPairInfo],
+    stack_index_order: &[char],
+    tensor: &ArrayBase<S, D>,
+) -> ArrayD<A>
+where
+    A: LinalgScalar,
+    S: Data<Elem = A>,
+    D: Dimension,
+{
+    let mut permutation: Vec<usize> = Vec::new();
+    let mut output_shape: Vec<usize> = Vec::new();
+    output_shape.push(1);
+
+    for &c in stack_index_order {
+        permutation.push(input_indices.iter().position(|idx| idx.index == c).unwrap());
+    }
+
+    for (i, (idx, &axis_length)) in input_indices.iter().zip(tensor.shape().iter()).enumerate() {
+        if let PairIndexInfo::StackInfo(_) = idx.index_info {
+            output_shape[0] *= axis_length;
+        } else {
+            permutation.push(i);
+            output_shape.push(axis_length);
+        }
+    }
+
+    let temp_result = tensor
+        .view()
+        .into_dyn()
+        .into_owned()
+        .permuted_axes(permutation);
+
+    Array::from_shape_vec(IxDyn(&output_shape), temp_result.iter().cloned().collect()).unwrap()
+}
 
 #[inline(never)]
 fn einsum_pair_allused_deduped_indices<A, S, S2, D, E>(
@@ -1199,8 +1200,8 @@ where
             }
         }
         // OLD:
-        // let lhs_reshaped = move_stack_indices_to_front(&cpc.lhs_indices, &stack_index_order, &lhs);
-        // let rhs_reshaped = move_stack_indices_to_front(&cpc.rhs_indices, &stack_index_order, &rhs);
+        let lhs_reshaped = move_stack_indices_to_front(&cpc.lhs_indices, &stack_index_order, &lhs);
+        let rhs_reshaped = move_stack_indices_to_front(&cpc.rhs_indices, &stack_index_order, &rhs);
 
         // NEW:
         let mut lhs_stack_axes = Vec::new();
@@ -1295,9 +1296,12 @@ where
             }
         }
         let mut temp_result: ArrayD<A> = Array::zeros(IxDyn(&temp_shape));
-        for mut output_subview in temp_result.outer_iter_mut() {
-            let lhs_subview = lhs_iter.next().unwrap();
-            let rhs_subview = rhs_iter.next().unwrap();
+        for (mut output_subview, (lhs_subview, rhs_subview)) in temp_result
+            .outer_iter_mut()
+            .zip(lhs_reshaped.outer_iter().zip(rhs_reshaped.outer_iter()))
+        {
+            // let lhs_subview = lhs_iter.next().unwrap();
+            // let rhs_subview = rhs_iter.next().unwrap();
             let output = einsum_pair_allused_nostacks_classified_deduped_indices(
                 &new_cdpc,
                 &lhs_subview,
