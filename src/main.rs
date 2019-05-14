@@ -92,11 +92,14 @@ where
 //
 
 fn main() {
-    for _ in 0..1000 {
+    let mut max = 0.;
+    for _ in 0..10000 {
         let m1 = rand_array((60, 40));
         let m2 = rand_array((60, 40));
 
         let hadamard_product = einsum("ij,ij->ij", &[&m1, &m2]).unwrap();
-        println!("{}", hadamard_product.sum());
+        let hm = hadamard_product.sum();
+        max = if max > hm { max } else { hm }
     }
+    println!("{}", max);
 }
