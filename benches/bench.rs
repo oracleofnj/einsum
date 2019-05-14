@@ -71,11 +71,27 @@ fn bench_hadamard_builtin_large(b: &mut Bencher) {
 }
 
 #[bench]
+fn bench_hadamard_transpose_builtin_large(b: &mut Bencher) {
+    let m1 = rand_array((300, 400));
+    let m2 = rand_array((400, 300));
+
+    b.iter(|| (&m1 * &m2.t()));
+}
+
+#[bench]
 fn bench_hadamard_large(b: &mut Bencher) {
     let m1 = rand_array((300, 400));
     let m2 = rand_array((300, 400));
 
     b.iter(|| einsum("ij,ij->ij", &[&m1, &m2]));
+}
+
+#[bench]
+fn bench_hadamard_transpose_large(b: &mut Bencher) {
+    let m1 = rand_array((300, 400));
+    let m2 = rand_array((400, 300));
+
+    b.iter(|| einsum("ij,ji->ij", &[&m1, &m2]));
 }
 
 #[bench]
