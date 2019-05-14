@@ -1,0 +1,14 @@
+Current results
+
+test bench_hadamard_builtin_large           ... bench:      87,611 ns/iter (+/- 8,180)
+test bench_hadamard_large                   ... bench:  29,897,452 ns/iter (+/- 2,299,245)
+test bench_hadamard_transpose_builtin_large ... bench:     144,198 ns/iter (+/- 17,298)
+test bench_hadamard_transpose_large         ... bench:  32,308,056 ns/iter (+/- 251,088)
+test bench_multiply_builtin_large           ... bench:  10,117,191 ns/iter (+/- 342,548)
+test bench_multiply_builtin_medium          ... bench:      13,681 ns/iter (+/- 740)
+test bench_multiply_builtin_tiny            ... bench:         365 ns/iter (+/- 34)
+test bench_multiply_large                   ... bench:  11,378,468 ns/iter (+/- 837,105)
+test bench_multiply_medium                  ... bench:      36,455 ns/iter (+/- 5,475)
+test bench_multiply_tiny                    ... bench:      11,019 ns/iter (+/- 1,138)
+test bench_sum_builtin_huge                 ... bench:   4,886,236 ns/iter (+/- 230,620)
+test bench_sum_huge                         ... bench:  29,590,929 ns/iter (+/- 1,499,088)
