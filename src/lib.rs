@@ -1220,10 +1220,10 @@ where
                     .unwrap(),
             );
         }
-        let lhs_dyn_view = lhs.view().into_dyn();
-        let rhs_dyn_view = rhs.view().into_dyn();
-        let mut lhs_iter = MultiAxisIterator::new(&lhs_dyn_view, &lhs_stack_axes);
-        let mut rhs_iter = MultiAxisIterator::new(&rhs_dyn_view, &rhs_stack_axes);
+        // let lhs_dyn_view = lhs.view().into_dyn();
+        // let rhs_dyn_view = rhs.view().into_dyn();
+        // let mut lhs_iter = MultiAxisIterator::new(&lhs_dyn_view, &lhs_stack_axes);
+        // let mut rhs_iter = MultiAxisIterator::new(&rhs_dyn_view, &rhs_stack_axes);
 
         // (2) Construct the non-stacked ClassifiedDedupedPairContraction
         let mut unstacked_lhs_chars = Vec::new();
@@ -1296,20 +1296,30 @@ where
             }
         }
         let mut temp_result: ArrayD<A> = Array::zeros(IxDyn(&temp_shape));
-        for (mut output_subview, (lhs_subview, rhs_subview)) in temp_result
-            .outer_iter_mut()
-            .zip(lhs_reshaped.outer_iter().zip(rhs_reshaped.outer_iter()))
-        {
-            // let lhs_subview = lhs_iter.next().unwrap();
-            // let rhs_subview = rhs_iter.next().unwrap();
-            let output = einsum_pair_allused_nostacks_classified_deduped_indices(
+        for i in 0..num_subviews {
+            let mut output_subview = temp_result.index_axis_mut(Axis(0), i);
+            let lhs_subview = lhs_reshaped.index_axis(Axis(0), i);
+            let rhs_subview = rhs_reshaped.index_axis(Axis(0), i);
+            output_subview.assign(&einsum_pair_allused_nostacks_classified_deduped_indices(
                 &new_cdpc,
                 &lhs_subview,
                 &rhs_subview,
-            );
-            output_subview.assign(&output);
+            ));
         }
-
+        // for (mut output_subview, (lhs_subview, rhs_subview)) in temp_result
+        //     .outer_iter_mut()
+        //     .zip(lhs_reshaped.outer_iter().zip(rhs_reshaped.outer_iter()))
+        // {
+        //     // let lhs_subview = lhs_iter.next().unwrap();
+        //     // let rhs_subview = rhs_iter.next().unwrap();
+        //     let output = einsum_pair_allused_nostacks_classified_deduped_indices(
+        //         &new_cdpc,
+        //         &lhs_subview,
+        //         &rhs_subview,
+        //     );
+        //     output_subview.assign(&output);
+        // }
+        //
         // (6) Permute into correct order
         let mut permutation: Vec<usize> = Vec::new();
         for &c in intermediate_indices.iter() {
