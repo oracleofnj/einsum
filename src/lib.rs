@@ -932,7 +932,8 @@ fn einsum_pair_allused_nostacks_classified_deduped_indices<A: LinalgScalar>(
     classified_pair_contraction: &ClassifiedDedupedPairContraction,
     lhs: &ArrayViewD<A>,
     rhs: &ArrayViewD<A>,
-) -> ArrayD<A> {
+    output: &mut ArrayViewMutD<A>,
+) {
     // Allowed: abc,bce->ae
     // Not allowed: abc,acd -> abd [a in lhs, rhs, and output]
     // Not allowed: abc,bcde -> ae [no d in output]
@@ -951,9 +952,8 @@ fn einsum_pair_allused_nostacks_classified_deduped_indices<A: LinalgScalar>(
         classified_pair_contraction.rhs_indices.len(),
     ) {
         (0, 0, 0) => {
-            let lhs_0d: A = lhs.first().unwrap().clone();
-            let rhs_0d: A = rhs.first().unwrap().clone();
-            arr0(lhs_0d * rhs_0d).into_dyn()
+            let scalarize = IxDyn(&[]);
+            output[&scalarize] = lhs[&scalarize] * rhs[&scalarize];
         }
         (0, 0, _) => {
             let lhs_0d: A = lhs.first().unwrap().clone();
@@ -978,9 +978,12 @@ fn einsum_pair_allused_nostacks_classified_deduped_indices<A: LinalgScalar>(
                 })
                 .collect();
 
-            rhs.mapv(|x| x * lhs_0d)
-                .into_dyn()
-                .permuted_axes(permutation)
+            output.assign(
+                &rhs.mapv(|x| x * lhs_0d)
+                    .into_dyn()
+                    .view()
+                    .permuted_axes(permutation),
+            );
         }
         (0, _, 0) => {
             let rhs_0d: A = rhs.first().unwrap().clone();
@@ -1005,9 +1008,12 @@ fn einsum_pair_allused_nostacks_classified_deduped_indices<A: LinalgScalar>(
                 })
                 .collect();
 
-            lhs.mapv(|x| x * rhs_0d)
-                .into_dyn()
-                .permuted_axes(permutation)
+            output.assign(
+                &lhs.mapv(|x| x * rhs_0d)
+                    .into_dyn()
+                    .view()
+                    .permuted_axes(permutation),
+            );
         }
         _ => {
             let mut lhs_axes = Vec::new();
@@ -1047,7 +1053,11 @@ fn einsum_pair_allused_nostacks_classified_deduped_indices<A: LinalgScalar>(
                 })
                 .collect();
 
-            tensordot(lhs, rhs, &lhs_axes, &rhs_axes).permuted_axes(permutation)
+            output.assign(
+                &tensordot(lhs, rhs, &lhs_axes, &rhs_axes)
+                    .view()
+                    .permuted_axes(permutation),
+            );
         }
     }
 }
@@ -1094,7 +1104,20 @@ fn einsum_pair_allused_deduped_indices<A: LinalgScalar>(
     let cpc = generate_classified_pair_contraction(sized_contraction);
 
     if cpc.stack_indices.len() == 0 {
-        einsum_pair_allused_nostacks_classified_deduped_indices(&cpc, lhs, rhs)
+        let result_shape: Vec<usize> = sized_contraction
+            .contraction
+            .output_indices
+            .iter()
+            .map(|c| sized_contraction.output_size[c])
+            .collect();
+        let mut result: ArrayD<A> = Array::zeros(IxDyn(&result_shape));
+        einsum_pair_allused_nostacks_classified_deduped_indices(
+            &cpc,
+            lhs,
+            rhs,
+            &mut result.view_mut(),
+        );
+        result
     } else {
         // What do we have to do?
         // (1) Permute the stack indices to the front of LHS and RHS and
@@ -1210,11 +1233,12 @@ fn einsum_pair_allused_deduped_indices<A: LinalgScalar>(
             // let mut output_subview = temp_result.index_axis_mut(Axis(0), i);
             // let lhs_subview = lhs_reshaped.index_axis(Axis(0), i);
             // let rhs_subview = rhs_reshaped.index_axis(Axis(0), i);
-            output_subview.assign(&einsum_pair_allused_nostacks_classified_deduped_indices(
+            einsum_pair_allused_nostacks_classified_deduped_indices(
                 &new_cdpc,
                 &lhs_subview,
                 &rhs_subview,
-            ));
+                &mut output_subview,
+            );
         }
         // for (mut output_subview, (lhs_subview, rhs_subview)) in temp_result
         //     .outer_iter_mut()
