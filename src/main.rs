@@ -12,9 +12,9 @@ where
 
 fn main() {
     let mut max = 0.;
-    for _ in 0..10000 {
-        let m1 = rand_array((60, 40));
-        let m2 = rand_array((60, 40));
+    for _ in 0..1000 {
+        let m1 = rand_array((500, 500));
+        let m2 = rand_array((500, 500));
 
         let hadamard_product = einsum("ij,ij->ij", &[&m1, &m2]).unwrap();
         let hm = hadamard_product.sum();

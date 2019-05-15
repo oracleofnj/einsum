@@ -1089,6 +1089,32 @@ fn move_stack_indices_to_front<A: LinalgScalar>(
     Array::from_shape_vec(IxDyn(&output_shape), temp_result.iter().cloned().collect()).unwrap()
 }
 
+#[inline(never)]
+fn get_intermediate_result<A: LinalgScalar>(
+    temp_shape: &[usize],
+    lhs_reshaped: &ArrayD<A>,
+    rhs_reshaped: &ArrayD<A>,
+    new_cdpc: &ClassifiedDedupedPairContraction,
+) -> ArrayD<A> {
+    let mut temp_result: ArrayD<A> = Array::zeros(IxDyn(&temp_shape));
+    let mut lhs_iter = lhs_reshaped.outer_iter();
+    let mut rhs_iter = rhs_reshaped.outer_iter();
+    for mut output_subview in temp_result.outer_iter_mut() {
+        let lhs_subview = lhs_iter.next().unwrap();
+        let rhs_subview = rhs_iter.next().unwrap();
+        // let mut output_subview = temp_result.index_axis_mut(Axis(0), i);
+        // let lhs_subview = lhs_reshaped.index_axis(Axis(0), i);
+        // let rhs_subview = rhs_reshaped.index_axis(Axis(0), i);
+        einsum_pair_allused_nostacks_classified_deduped_indices(
+            &new_cdpc,
+            &lhs_subview,
+            &rhs_subview,
+            &mut output_subview,
+        );
+    }
+    temp_result
+}
+
 fn einsum_pair_allused_deduped_indices<A: LinalgScalar>(
     sized_contraction: &SizedContraction,
     lhs: &ArrayViewD<A>,
@@ -1224,22 +1250,8 @@ fn einsum_pair_allused_deduped_indices<A: LinalgScalar>(
                 intermediate_indices.push(*c);
             }
         }
-        let mut temp_result: ArrayD<A> = Array::zeros(IxDyn(&temp_shape));
-        let mut lhs_iter = lhs_reshaped.outer_iter();
-        let mut rhs_iter = rhs_reshaped.outer_iter();
-        for mut output_subview in temp_result.outer_iter_mut() {
-            let lhs_subview = lhs_iter.next().unwrap();
-            let rhs_subview = rhs_iter.next().unwrap();
-            // let mut output_subview = temp_result.index_axis_mut(Axis(0), i);
-            // let lhs_subview = lhs_reshaped.index_axis(Axis(0), i);
-            // let rhs_subview = rhs_reshaped.index_axis(Axis(0), i);
-            einsum_pair_allused_nostacks_classified_deduped_indices(
-                &new_cdpc,
-                &lhs_subview,
-                &rhs_subview,
-                &mut output_subview,
-            );
-        }
+        let temp_result =
+            get_intermediate_result(&temp_shape, &lhs_reshaped, &rhs_reshaped, &new_cdpc);
         // for (mut output_subview, (lhs_subview, rhs_subview)) in temp_result
         //     .outer_iter_mut()
         //     .zip(lhs_reshaped.outer_iter().zip(rhs_reshaped.outer_iter()))
