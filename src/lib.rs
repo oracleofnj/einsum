@@ -26,7 +26,10 @@ pub use validation::{
 };
 
 mod optimizers;
-pub use optimizers::{EinsumPath, generate_optimized_path, FirstStep, IntermediateStep, OperandNumPair, OptimizationMethod};
+pub use optimizers::{
+    generate_optimized_path, EinsumPath, FirstStep, IntermediateStep, OperandNumPair,
+    OptimizationMethod,
+};
 
 #[derive(Clone, Debug)]
 pub struct UntouchedIndex {

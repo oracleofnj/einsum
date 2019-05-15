@@ -841,3 +841,29 @@ fn it_contracts_three_matrices_with_repeats_3() {
     let dotted = einsum_sc(&sc, &[&op1, &op2, &op3]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
+
+#[test]
+fn it_contracts_four_matrices() {
+    let op1 = rand_array((2, 3));
+    let op2 = rand_array((3, 4));
+    let op3 = rand_array((4, 5));
+    let op4 = rand_array((5, 6));
+
+    let mut correct_answer: Array2<f64> = Array::zeros((2, 5));
+    for i in 0..2 {
+        for j in 0..3 {
+            for k in 0..4 {
+                for l in 0..5 {
+                    for m in 0..6 {
+                        correct_answer[[i, l]] +=
+                            op1[[i, j]] * op2[[j, k]] * op3[[k, l]] * op4[[l, m]];
+                    }
+                }
+            }
+        }
+    }
+
+    let sc = validate_and_size("ij,jk,kl,lm->il", &[&op1, &op2, &op3, &op4]).unwrap();
+    let dotted = einsum_sc(&sc, &[&op1, &op2, &op3, &op4]);
+    assert!(correct_answer.all_close(&dotted, TOL));
+}
