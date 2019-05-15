@@ -735,26 +735,21 @@ fn einsum_singleton_norepeats<'a, A: LinalgScalar>(
 
 // TODO: Replace this by calculating the right dimensions and strides to use
 // TODO: Take a &mut ClassifiedSingletonContraction and mutate it
-fn diagonalize_singleton<A, S, D>(
-    tensor: &ArrayBase<S, D>,
+fn diagonalize_singleton<A: LinalgScalar>(
+    tensor: &ArrayViewD<A>,
     axes: &[usize],
     destination_axis: usize,
-) -> ArrayD<A>
-where
-    A: LinalgScalar,
-    S: Data<Elem = A>,
-    D: Dimension,
-{
+) -> ArrayD<A> {
     // TODO: Replace this now that I understand how to use assign()
     assert!(axes.len() > 0);
     let axis_length = tensor.shape()[axes[0]];
     let slices: Vec<_> = (0..axis_length)
         .map(|i| {
-            let mut subview = tensor.view().into_dyn().into_owned();
+            let mut subview = tensor.view().into_owned();
             let mut foo = Vec::from(axes);
             foo.sort();
             for &j in foo.iter().rev() {
-                subview = subview.index_axis(Axis(j), i).into_owned();
+                subview = subview.index_axis_move(Axis(j), i);
             }
             subview.insert_axis(Axis(destination_axis))
         })
@@ -782,7 +777,7 @@ fn diagonalize_singleton_char<A>(
             axes.push(i);
         }
     }
-    let new_tensor = diagonalize_singleton(tensor, &axes, 0);
+    let new_tensor = diagonalize_singleton(&tensor.view(), &axes, 0);
 
     *tensor = new_tensor;
     *operand_indices = new_indices;
@@ -791,15 +786,10 @@ fn diagonalize_singleton_char<A>(
 // TODO: Figure out correct magic with strides and dimensions
 // TODO: Take a ClassifiedSingletonContraction instead of a
 //       SizedContraction
-pub fn einsum_singleton<A, S, D>(
+pub fn einsum_singleton<'a, A: LinalgScalar>(
     sized_contraction: &SizedContraction,
-    tensor: &ArrayBase<S, D>,
-) -> ArrayD<A>
-where
-    A: LinalgScalar,
-    S: Data<Elem = A>,
-    D: Dimension,
-{
+    tensor: &'a ArrayViewD<'a, A>,
+) -> ArrayD<A> {
     // Handles the case where it's iijk->ik; just diagonalization + sums
     assert!(sized_contraction.contraction.operand_indices.len() == 1);
     let mut distinct_elements = HashSet::new();
@@ -816,10 +806,10 @@ where
 
     if no_repeated_elements {
         let csc = generate_classified_singleton_contraction(sized_contraction);
-        einsum_singleton_norepeats(&csc, &tensor.view().into_dyn())
+        einsum_singleton_norepeats(&csc, tensor)
     } else {
         let mut operand_indices = sized_contraction.contraction.operand_indices[0].clone();
-        let mut modified_tensor = tensor.view().into_dyn().into_owned();
+        let mut modified_tensor = tensor.view().into_owned();
 
         for &c in repeated_elements.iter() {
             diagonalize_singleton_char(&mut modified_tensor, &mut operand_indices, c);
@@ -840,18 +830,11 @@ where
     }
 }
 
-fn tensordot_fixed_order<A, S, S2, D, E>(
-    lhs: &ArrayBase<S, D>,
-    rhs: &ArrayBase<S2, E>,
+fn tensordot_fixed_order<A: LinalgScalar>(
+    lhs: &ArrayViewD<A>,
+    rhs: &ArrayViewD<A>,
     last_n: usize,
-) -> ArrayD<A>
-where
-    A: ndarray::LinalgScalar,
-    S: Data<Elem = A>,
-    S2: Data<Elem = A>,
-    D: Dimension,
-    E: Dimension,
-{
+) -> ArrayD<A> {
     // Returns an n-dimensional array where n = |D| + |E| - 2 * last_n.
     // The shape will be (...lhs.shape(:-last_n), ...rhs.shape(last_n:))
     // i.e. if lhs.shape = (3,4,5), rhs.shape = (4,5,6), and last_n=2,
@@ -945,18 +928,11 @@ where
     tensordot_fixed_order(&rolled_lhs, &rolled_rhs, lhs_axes.len())
 }
 
-fn einsum_pair_allused_nostacks_classified_deduped_indices<A, S, S2, D, E>(
+fn einsum_pair_allused_nostacks_classified_deduped_indices<A: LinalgScalar>(
     classified_pair_contraction: &ClassifiedDedupedPairContraction,
-    lhs: &ArrayBase<S, D>,
-    rhs: &ArrayBase<S2, E>,
-) -> ArrayD<A>
-where
-    A: LinalgScalar,
-    S: Data<Elem = A>,
-    S2: Data<Elem = A>,
-    D: Dimension,
-    E: Dimension,
-{
+    lhs: &ArrayViewD<A>,
+    rhs: &ArrayViewD<A>,
+) -> ArrayD<A> {
     // Allowed: abc,bce->ae
     // Not allowed: abc,acd -> abd [a in lhs, rhs, and output]
     // Not allowed: abc,bcde -> ae [no d in output]
@@ -1076,16 +1052,11 @@ where
     }
 }
 
-fn move_stack_indices_to_front<A, S, D>(
+fn move_stack_indices_to_front<A: LinalgScalar>(
     input_indices: &[IndexWithPairInfo],
     stack_index_order: &[char],
-    tensor: &ArrayBase<S, D>,
-) -> ArrayD<A>
-where
-    A: LinalgScalar,
-    S: Data<Elem = A>,
-    D: Dimension,
-{
+    tensor: &ArrayViewD<A>,
+) -> ArrayD<A> {
     let mut permutation: Vec<usize> = Vec::new();
     let mut output_shape: Vec<usize> = Vec::new();
     output_shape.push(1);
@@ -1103,27 +1074,16 @@ where
         }
     }
 
-    let temp_result = tensor
-        .view()
-        .into_dyn()
-        // .into_owned()
-        .permuted_axes(permutation);
+    let temp_result = tensor.view().permuted_axes(permutation);
 
     Array::from_shape_vec(IxDyn(&output_shape), temp_result.iter().cloned().collect()).unwrap()
 }
 
-fn einsum_pair_allused_deduped_indices<A, S, S2, D, E>(
+fn einsum_pair_allused_deduped_indices<A: LinalgScalar>(
     sized_contraction: &SizedContraction,
-    lhs: &ArrayBase<S, D>,
-    rhs: &ArrayBase<S2, E>,
-) -> ArrayD<A>
-where
-    A: LinalgScalar,
-    S: Data<Elem = A>,
-    S2: Data<Elem = A>,
-    D: Dimension,
-    E: Dimension,
-{
+    lhs: &ArrayViewD<A>,
+    rhs: &ArrayViewD<A>,
+) -> ArrayD<A> {
     // Allowed: abc,bce->ae
     // Allowed: abc,acd -> abd [a in lhs, rhs, and output]
     // Not allowed: abc,bcde -> ae [no d in output]
@@ -1242,10 +1202,14 @@ where
             }
         }
         let mut temp_result: ArrayD<A> = Array::zeros(IxDyn(&temp_shape));
-        for i in 0..num_subviews {
-            let mut output_subview = temp_result.index_axis_mut(Axis(0), i);
-            let lhs_subview = lhs_reshaped.index_axis(Axis(0), i);
-            let rhs_subview = rhs_reshaped.index_axis(Axis(0), i);
+        let mut lhs_iter = lhs_reshaped.outer_iter();
+        let mut rhs_iter = rhs_reshaped.outer_iter();
+        for mut output_subview in temp_result.outer_iter_mut() {
+            let lhs_subview = lhs_iter.next().unwrap();
+            let rhs_subview = rhs_iter.next().unwrap();
+            // let mut output_subview = temp_result.index_axis_mut(Axis(0), i);
+            // let lhs_subview = lhs_reshaped.index_axis(Axis(0), i);
+            // let rhs_subview = rhs_reshaped.index_axis(Axis(0), i);
             output_subview.assign(&einsum_pair_allused_nostacks_classified_deduped_indices(
                 &new_cdpc,
                 &lhs_subview,
@@ -1287,18 +1251,11 @@ where
 
 }
 
-pub fn einsum_pair<A, S, S2, D, E>(
+fn einsum_pair<'a, A: LinalgScalar>(
     sized_contraction: &SizedContraction,
-    lhs: &ArrayBase<S, D>,
-    rhs: &ArrayBase<S2, E>,
-) -> ArrayD<A>
-where
-    A: LinalgScalar,
-    S: Data<Elem = A>,
-    S2: Data<Elem = A>,
-    D: Dimension,
-    E: Dimension,
-{
+    lhs: &'a ArrayViewD<'a, A>,
+    rhs: &'a ArrayViewD<'a, A>,
+) -> ArrayD<A> {
     // If we have abc,bcde -> ae [no d in output] or abbc,bce -> ae [repeated b in input],
     // collapse the offending tensor before delegating to einsum_pair_allused_deduped_indices
     // In other words: collapse each tensor so that each index of each tensor is unique,
@@ -1356,7 +1313,7 @@ where
             let rhs_collapsed = einsum_singleton(&sc, rhs);
             let sc =
                 validate_and_size(&new_einsum_string, &[&lhs_collapsed, &rhs_collapsed]).unwrap();
-            einsum_pair_allused_deduped_indices(&sc, &lhs_collapsed, &rhs_collapsed)
+            einsum_pair_allused_deduped_indices(&sc, &lhs_collapsed.view(), &rhs_collapsed.view())
         }
         (true, false) => {
             let lhs_str: String = sized_contraction.contraction.operand_indices[0]
@@ -1376,7 +1333,7 @@ where
             let sc = validate_and_size(&einsum_string_lhs, &[lhs]).unwrap();
             let lhs_collapsed = einsum_singleton(&sc, lhs);
             let sc = validate_and_size(&new_einsum_string, &[&lhs_collapsed, rhs]).unwrap();
-            einsum_pair_allused_deduped_indices(&sc, &lhs_collapsed, rhs)
+            einsum_pair_allused_deduped_indices(&sc, &lhs_collapsed.view(), rhs)
         }
         (false, true) => {
             let new_lhs_str: String = sized_contraction.contraction.operand_indices[0]
@@ -1396,7 +1353,7 @@ where
             let sc = validate_and_size(&einsum_string_rhs, &[rhs]).unwrap();
             let rhs_collapsed = einsum_singleton(&sc, rhs);
             let sc = validate_and_size(&new_einsum_string, &[lhs, &rhs_collapsed]).unwrap();
-            einsum_pair_allused_deduped_indices(&sc, lhs, &rhs_collapsed)
+            einsum_pair_allused_deduped_indices(&sc, lhs, &rhs_collapsed.view())
         }
     }
 }
@@ -1429,7 +1386,7 @@ where
         } = step;
         result = einsum_pair(
             &sized_contraction,
-            &result,
+            &result.view(),
             &(operands[*rhs_num].into_dyn_view()),
         );
     }
