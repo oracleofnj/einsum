@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::contractors::generate_classified_singleton_contraction;
 use lazy_static::lazy_static;
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
@@ -31,49 +32,8 @@ pub use optimizers::{
     OptimizationMethod,
 };
 
-#[derive(Clone, Debug)]
-pub struct UntouchedIndex {
-    position: usize,
-    output_position: usize,
-}
-
-#[derive(Clone, Debug)]
-pub struct DiagonalizedIndex {
-    positions: Vec<usize>,
-    output_position: usize,
-}
-
-#[derive(Clone, Debug)]
-pub struct SummedIndex {
-    positions: Vec<usize>,
-}
-
-// TODO: Replace the chars here with usizes and the HashMaps with vecs
-#[derive(Clone, Debug)]
-pub enum SingletonIndexInfo {
-    UntouchedInfo(UntouchedIndex),
-    DiagonalizedInfo(DiagonalizedIndex),
-    SummedInfo(SummedIndex),
-}
-
-#[derive(Clone, Debug)]
-pub struct IndexWithSingletonInfo {
-    index: char,
-    index_info: SingletonIndexInfo,
-}
-
-type UntouchedIndexMap = HashMap<char, UntouchedIndex>;
-type DiagonalizedIndexMap = HashMap<char, DiagonalizedIndex>;
-type SummedIndexMap = HashMap<char, SummedIndex>;
-
-#[derive(Clone, Debug)]
-pub struct ClassifiedSingletonContraction {
-    input_indices: Vec<IndexWithSingletonInfo>,
-    output_indices: Vec<IndexWithSingletonInfo>,
-    untouched_indices: UntouchedIndexMap,
-    diagonalized_indices: DiagonalizedIndexMap,
-    summed_indices: SummedIndexMap,
-}
+mod contractors;
+pub use contractors::{PairContractor, SingletonContractor};
 
 #[derive(Clone, Debug)]
 pub struct StackIndex {
@@ -162,199 +122,6 @@ where
 {
     fn into_dyn_view(&self) -> ArrayView<A, IxDyn> {
         self.view().into_dyn()
-    }
-}
-
-// struct MultiAxisIterator<'a, A> {
-//     carrying: bool,
-//     ndim: usize,
-//     // axes: Vec<usize>,
-//     renumbered_axes: Vec<usize>,
-//     shape: Vec<usize>,
-//     positions: Vec<usize>,
-//     underlying: &'a ArrayViewD<'a, A>,
-//     // subviews: Vec<ArrayViewD<'a, A>>,
-// }
-//
-// impl<'a, A> MultiAxisIterator<'a, A> {
-//     fn new(base: &'a ArrayViewD<'a, A>, axes: &[usize]) -> MultiAxisIterator<'a, A> {
-//         let ndim = axes.len();
-//         // let axes: Vec<usize> = axes.to_vec();
-//         let renumbered_axes: Vec<usize> = axes
-//             .iter()
-//             .enumerate()
-//             .map(|(i, &v)| v - axes[0..i].iter().filter(|&&x| x < v).count())
-//             .collect();
-//         let shape: Vec<usize> = axes
-//             .iter()
-//             .map(|&x| base.shape().get(x).unwrap())
-//             .cloned()
-//             .collect();
-//         let positions = vec![0; shape.len()];
-//
-//         // let mut subviews = Vec::new();
-//         // let mut axis_iters = Vec::new();
-//         //
-//         // for (ax_num, &ax) in axes.iter().enumerate() {
-//         //     let mut subview = base.view();
-//         //     for i in 0..ax_num {
-//         //         subview = subview.index_axis_move(Axis(0), 0);
-//         //     }
-//         //     subviews.push(subview);
-//         // }
-//
-//         MultiAxisIterator {
-//             underlying: base,
-//             carrying: false,
-//             ndim,
-//             // axes,
-//             renumbered_axes,
-//             shape,
-//             positions,
-//             // subviews,
-//         }
-//     }
-// }
-//
-// impl<'a, A> Iterator for MultiAxisIterator<'a, A> {
-//     type Item = ArrayViewD<'a, A>;
-//
-//     fn next(&mut self) -> Option<Self::Item> {
-//         if !self.carrying {
-//             let mut view = self.underlying.view();
-//             for (&ax, &pos) in self.renumbered_axes.iter().zip(&self.positions) {
-//                 view = view.index_axis_move(Axis(ax), pos);
-//             }
-//             self.carrying = true;
-//             for i in 0..self.ndim {
-//                 let axis = self.ndim - i - 1;
-//                 if self.positions[axis] == self.shape[axis] - 1 {
-//                     self.positions[axis] = 0;
-//                 } else {
-//                     self.positions[axis] += 1;
-//                     self.carrying = false;
-//                     break;
-//                 }
-//             }
-//             Some(view)
-//         } else {
-//             None
-//         }
-//     }
-// }
-//
-fn generate_info_vector_for_singleton(
-    operand_indices: &[char],
-    untouched_indices: &UntouchedIndexMap,
-    diagonalized_indices: &DiagonalizedIndexMap,
-    summed_indices: &SummedIndexMap,
-) -> Vec<IndexWithSingletonInfo> {
-    let mut indices = Vec::new();
-    for &c in operand_indices {
-        if let Some(untouched_info) = untouched_indices.get(&c) {
-            indices.push(IndexWithSingletonInfo {
-                index: c,
-                index_info: SingletonIndexInfo::UntouchedInfo(untouched_info.clone()),
-            });
-        } else if let Some(diagonalized_info) = diagonalized_indices.get(&c) {
-            indices.push(IndexWithSingletonInfo {
-                index: c,
-                index_info: SingletonIndexInfo::DiagonalizedInfo(diagonalized_info.clone()),
-            });
-        } else if let Some(summed_info) = summed_indices.get(&c) {
-            indices.push(IndexWithSingletonInfo {
-                index: c,
-                index_info: SingletonIndexInfo::SummedInfo(summed_info.clone()),
-            });
-        } else {
-            panic!();
-        }
-    }
-    indices
-}
-
-fn generate_classified_singleton_contraction(
-    sized_contraction: &SizedContraction,
-) -> ClassifiedSingletonContraction {
-    let Contraction {
-        ref operand_indices,
-        ref output_indices,
-        ref summation_indices,
-    } = sized_contraction.contraction;
-
-    assert_eq!(operand_indices.len(), 1);
-
-    let mut untouched_indices = HashMap::new();
-    let mut diagonalized_indices = HashMap::new();
-    let mut summed_indices = HashMap::new();
-    let input_chars = &operand_indices[0];
-
-    for (output_position, &c) in output_indices.iter().enumerate() {
-        let mut input_positions = Vec::new();
-        for (pos, _) in input_chars.iter().enumerate().filter(|&(_, &x)| x == c) {
-            input_positions.push(pos);
-        }
-        match input_positions.len() {
-            0 => panic!(),
-            1 => {
-                untouched_indices.insert(
-                    c,
-                    UntouchedIndex {
-                        position: input_positions[0],
-                        output_position,
-                    },
-                );
-            }
-            _ => {
-                diagonalized_indices.insert(
-                    c,
-                    DiagonalizedIndex {
-                        positions: input_positions,
-                        output_position,
-                    },
-                );
-            }
-        }
-    }
-
-    for &c in summation_indices.iter() {
-        let mut input_positions = Vec::new();
-        for (pos, _) in input_chars.iter().enumerate().filter(|&(_, &x)| x == c) {
-            input_positions.push(pos);
-        }
-        summed_indices.insert(
-            c,
-            SummedIndex {
-                positions: input_positions,
-            },
-        );
-    }
-
-    let input_indices = generate_info_vector_for_singleton(
-        &input_chars,
-        &untouched_indices,
-        &diagonalized_indices,
-        &summed_indices,
-    );
-    let output_indices = generate_info_vector_for_singleton(
-        &output_indices,
-        &untouched_indices,
-        &diagonalized_indices,
-        &summed_indices,
-    );
-
-    assert_eq!(
-        output_indices.len(),
-        untouched_indices.len() + diagonalized_indices.len()
-    );
-    assert_eq!(summation_indices.len(), summed_indices.len());
-
-    ClassifiedSingletonContraction {
-        input_indices,
-        output_indices,
-        untouched_indices,
-        diagonalized_indices,
-        summed_indices,
     }
 }
 
@@ -495,55 +262,55 @@ fn generate_classified_pair_contraction(
     }
 }
 
-pub fn move_output_indices_to_front<'a, A: LinalgScalar>(
-    input_indices: &[IndexWithSingletonInfo],
-    output_index_order: &[char],
-    tensor: &'a ArrayViewD<'a, A>,
-) -> ArrayViewD<'a, A> {
-    let mut permutation: Vec<usize> = Vec::new();
-
-    for &c in output_index_order {
-        let input_pos = input_indices.iter().position(|idx| idx.index == c).unwrap();
-        permutation.push(input_pos);
-    }
-
-    for (i, idx) in input_indices.iter().enumerate() {
-        if let SingletonIndexInfo::SummedInfo(_) = idx.index_info {
-            permutation.push(i);
-        }
-    }
-
-    tensor.view().permuted_axes(permutation)
-}
-
-fn einsum_singleton_norepeats<'a, A: LinalgScalar>(
-    csc: &ClassifiedSingletonContraction,
-    tensor: &'a ArrayViewD<'a, A>,
-) -> ArrayD<A> {
-    // Handles the case where it's ijk->ik; just sums
-    assert_eq!(csc.diagonalized_indices.len(), 0);
-    assert_eq!(
-        csc.summed_indices
-            .values()
-            .filter(|x| x.positions.len() != 1)
-            .count(),
-        0
-    );
-
-    let output_index_order: Vec<char> = csc.output_indices.iter().map(|x| x.index).collect();
-    let permuted_input =
-        move_output_indices_to_front(&csc.input_indices, &output_index_order, tensor);
-    if csc.summed_indices.len() == 0 {
-        permuted_input.into_owned()
-    } else {
-        let mut result = permuted_input.sum_axis(Axis(csc.output_indices.len()));
-        for _ in 1..csc.summed_indices.len() {
-            result = result.sum_axis(Axis(csc.output_indices.len()));
-        }
-        result
-    }
-}
-
+// fn move_output_indices_to_front<'a, A: LinalgScalar>(
+//     input_indices: &[IndexWithSingletonInfo],
+//     output_index_order: &[char],
+//     tensor: &'a ArrayViewD<'a, A>,
+// ) -> ArrayViewD<'a, A> {
+//     let mut permutation: Vec<usize> = Vec::new();
+//
+//     for &c in output_index_order {
+//         let input_pos = input_indices.iter().position(|idx| idx.index == c).unwrap();
+//         permutation.push(input_pos);
+//     }
+//
+//     for (i, idx) in input_indices.iter().enumerate() {
+//         if let SingletonIndexInfo::SummedInfo(_) = idx.index_info {
+//             permutation.push(i);
+//         }
+//     }
+//
+//     tensor.view().permuted_axes(permutation)
+// }
+//
+// fn einsum_singleton_norepeats<'a, A: LinalgScalar>(
+//     csc: &ClassifiedSingletonContraction,
+//     tensor: &'a ArrayViewD<'a, A>,
+// ) -> ArrayD<A> {
+//     // Handles the case where it's ijk->ik; just sums
+//     assert_eq!(csc.diagonalized_indices.len(), 0);
+//     assert_eq!(
+//         csc.summed_indices
+//             .values()
+//             .filter(|x| x.positions.len() != 1)
+//             .count(),
+//         0
+//     );
+//
+//     let output_index_order: Vec<char> = csc.output_indices.iter().map(|x| x.index).collect();
+//     let permuted_input =
+//         move_output_indices_to_front(&csc.input_indices, &output_index_order, tensor);
+//     if csc.summed_indices.len() == 0 {
+//         permuted_input.into_owned()
+//     } else {
+//         let mut result = permuted_input.sum_axis(Axis(csc.output_indices.len()));
+//         for _ in 1..csc.summed_indices.len() {
+//             result = result.sum_axis(Axis(csc.output_indices.len()));
+//         }
+//         result
+//     }
+// }
+//
 // TODO: Replace this by calculating the right dimensions and strides to use
 // TODO: Take a &mut ClassifiedSingletonContraction and mutate it
 fn diagonalize_singleton<A: LinalgScalar>(
@@ -617,7 +384,7 @@ pub fn einsum_singleton<'a, A: LinalgScalar>(
 
     if no_repeated_elements {
         let csc = generate_classified_singleton_contraction(sized_contraction);
-        einsum_singleton_norepeats(&csc, tensor)
+        csc.contract_singleton(tensor)
     } else {
         let mut operand_indices = sized_contraction.contraction.operand_indices[0].clone();
         let mut modified_tensor = tensor.view().into_owned();
@@ -637,7 +404,7 @@ pub fn einsum_singleton<'a, A: LinalgScalar>(
         let new_contraction = validate_and_size(&new_einsum_string, &[&modified_tensor]).unwrap();
 
         let csc = generate_classified_singleton_contraction(&new_contraction);
-        einsum_singleton_norepeats(&csc, &modified_tensor.view())
+        csc.contract_singleton(&modified_tensor.view())
     }
 }
 
