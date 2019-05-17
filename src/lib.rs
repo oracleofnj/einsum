@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::contractors::generate_classified_singleton_contraction;
 use lazy_static::lazy_static;
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
@@ -33,7 +32,7 @@ pub use optimizers::{
 };
 
 mod contractors;
-pub use contractors::{PairContractor, SingletonContractor};
+pub use contractors::{SingletonContraction, SingletonContractor};
 
 #[derive(Clone, Debug)]
 pub struct StackIndex {
@@ -383,7 +382,7 @@ pub fn einsum_singleton<'a, A: LinalgScalar>(
     let no_repeated_elements = repeated_elements.len() == 0;
 
     if no_repeated_elements {
-        let csc = generate_classified_singleton_contraction(sized_contraction);
+        let csc = SingletonContraction::new(&sized_contraction);
         csc.contract_singleton(tensor)
     } else {
         let mut operand_indices = sized_contraction.contraction.operand_indices[0].clone();
@@ -403,7 +402,7 @@ pub fn einsum_singleton<'a, A: LinalgScalar>(
         let new_einsum_string = format!("{}->{}", operand_indices_str, output_str);
         let new_contraction = validate_and_size(&new_einsum_string, &[&modified_tensor]).unwrap();
 
-        let csc = generate_classified_singleton_contraction(&new_contraction);
+        let csc = SingletonContraction::new(&new_contraction);
         csc.contract_singleton(&modified_tensor.view())
     }
 }

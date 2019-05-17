@@ -3,16 +3,116 @@ use ndarray::prelude::*;
 use ndarray::LinalgScalar;
 use std::collections::HashMap;
 
-pub trait SingletonContractor<'a, A> {
-    fn contract_singleton(&self, tensor: &'a ArrayViewD<'a, A>) -> ArrayD<A>
+pub trait SingletonViewer<A> {
+    fn view_singleton<'a>(&self, tensor: &'a ArrayViewD<'a, A>) -> ArrayViewD<'a, A>
     where
         A: Clone + LinalgScalar;
 }
 
-pub trait PairContractor<'a, A> {
-    fn contract_pair(&self, lhs: &'a ArrayViewD<'a, A>, rhs: &'a ArrayViewD<'a, A>) -> ArrayD<A>
+pub trait SingletonContractor<A> {
+    fn contract_singleton<'a>(&self, tensor: &'a ArrayViewD<'a, A>) -> ArrayD<A>
     where
         A: Clone + LinalgScalar;
+}
+
+pub trait PairContractor<A> {
+    fn contract_pair<'a>(
+        &self,
+        lhs: &'a ArrayViewD<'a, A>,
+        rhs: &'a ArrayViewD<'a, A>,
+    ) -> ArrayD<A>
+    where
+        A: Clone + LinalgScalar;
+}
+
+#[derive(Clone, Debug)]
+pub struct Permutation {
+    permutation: Vec<usize>,
+}
+
+impl Permutation {
+    pub fn new(sc: &SizedContraction) -> Self {
+        let SizedContraction {
+            contraction:
+                Contraction {
+                    ref operand_indices,
+                    ref output_indices,
+                    ..
+                },
+            ..
+        } = sc;
+
+        assert_eq!(operand_indices.len(), 1);
+        assert_eq!(operand_indices[0].len(), output_indices.len());
+
+        let mut permutation = Vec::new();
+        for &c in output_indices.iter() {
+            permutation.push(operand_indices[0].iter().position(|&x| x == c).unwrap());
+        }
+
+        Permutation { permutation }
+    }
+}
+
+impl<A> SingletonViewer<A> for Permutation {
+    fn view_singleton<'a>(&self, tensor: &'a ArrayViewD<'a, A>) -> ArrayViewD<'a, A>
+    where
+        A: Clone + LinalgScalar,
+    {
+        tensor.view().permuted_axes(IxDyn(&self.permutation))
+    }
+}
+
+impl<A> SingletonContractor<A> for Permutation {
+    fn contract_singleton<'a>(&self, tensor: &'a ArrayViewD<'a, A>) -> ArrayD<A>
+    where
+        A: Clone + LinalgScalar,
+    {
+        tensor
+            .view()
+            .permuted_axes(IxDyn(&self.permutation))
+            .to_owned()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Identity {}
+
+impl Identity {
+    pub fn new(sc: &SizedContraction) -> Self {
+        let SizedContraction {
+            contraction:
+                Contraction {
+                    ref operand_indices,
+                    ref output_indices,
+                    ..
+                },
+            ..
+        } = sc;
+
+        assert_eq!(operand_indices.len(), 1);
+        assert_eq!(&operand_indices[0], output_indices);
+
+        Identity {}
+    }
+}
+
+impl<A> SingletonViewer<A> for Identity {
+    fn view_singleton<'a>(&self, tensor: &'a ArrayViewD<'a, A>) -> ArrayViewD<'a, A>
+    where
+        A: Clone + LinalgScalar,
+    {
+        tensor.view()
+    }
+}
+
+impl<A> SingletonContractor<A> for Identity {
+    fn contract_singleton<'a>(&self, tensor: &'a ArrayViewD<'a, A>) -> ArrayD<A>
+    where
+        A: Clone + LinalgScalar,
+    {
+        tensor.to_owned()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -59,6 +159,40 @@ pub struct ClassifiedSingletonContraction {
     summed_indices: SummedIndexMap,
 }
 
+pub struct SingletonContraction<A> {
+    pub op: Box<dyn SingletonContractor<A>>,
+}
+
+impl<A> SingletonContraction<A> {
+    pub fn new(sc: &SizedContraction) -> Self {
+        let csc = ClassifiedSingletonContraction::new(sc);
+
+        if csc.summed_indices.len() == 0 {
+            let permutation = Permutation::new(sc);
+            SingletonContraction {
+                op: Box::new(permutation),
+            }
+        } else {
+            SingletonContraction { op: Box::new(csc) }
+        }
+    }
+}
+
+impl<A> SingletonContractor<A> for SingletonContraction<A> {
+    fn contract_singleton<'a>(&self, tensor: &'a ArrayViewD<'a, A>) -> ArrayD<A>
+    where
+        A: Clone + LinalgScalar,
+    {
+        self.op.contract_singleton(tensor)
+    }
+}
+
+impl ClassifiedSingletonContraction {
+    pub fn new(sc: &SizedContraction) -> Self {
+        generate_classified_singleton_contraction(sc)
+    }
+}
+
 fn generate_info_vector_for_singleton(
     operand_indices: &[char],
     untouched_indices: &UntouchedIndexMap,
@@ -89,7 +223,7 @@ fn generate_info_vector_for_singleton(
     indices
 }
 
-pub fn generate_classified_singleton_contraction(
+fn generate_classified_singleton_contraction(
     sized_contraction: &SizedContraction,
 ) -> ClassifiedSingletonContraction {
     let Contraction {
@@ -164,6 +298,14 @@ pub fn generate_classified_singleton_contraction(
         untouched_indices.len() + diagonalized_indices.len()
     );
     assert_eq!(summation_indices.len(), summed_indices.len());
+    // assert_eq!(csc.diagonalized_indices.len(), 0);
+    // assert_eq!(
+    //     csc.summed_indices
+    //         .values()
+    //         .filter(|x| x.positions.len() != 1)
+    //         .count(),
+    //     0
+    // );
 
     ClassifiedSingletonContraction {
         input_indices,
@@ -195,39 +337,18 @@ fn move_output_indices_to_front<'a, A: LinalgScalar>(
     tensor.view().permuted_axes(permutation)
 }
 
-fn einsum_singleton_norepeats<'a, A: LinalgScalar>(
-    csc: &ClassifiedSingletonContraction,
-    tensor: &'a ArrayViewD<'a, A>,
-) -> ArrayD<A> {
-    // Handles the case where it's ijk->ik; just sums
-    assert_eq!(csc.diagonalized_indices.len(), 0);
-    assert_eq!(
-        csc.summed_indices
-            .values()
-            .filter(|x| x.positions.len() != 1)
-            .count(),
-        0
-    );
-
-    let output_index_order: Vec<char> = csc.output_indices.iter().map(|x| x.index).collect();
-    let permuted_input =
-        move_output_indices_to_front(&csc.input_indices, &output_index_order, tensor);
-    if csc.summed_indices.len() == 0 {
-        permuted_input.into_owned()
-    } else {
-        let mut result = permuted_input.sum_axis(Axis(csc.output_indices.len()));
-        for _ in 1..csc.summed_indices.len() {
-            result = result.sum_axis(Axis(csc.output_indices.len()));
-        }
-        result
-    }
-}
-
-impl<'a, A> SingletonContractor<'a, A> for ClassifiedSingletonContraction {
-    fn contract_singleton(&self, tensor: &'a ArrayViewD<'a, A>) -> ArrayD<A>
+impl<A> SingletonContractor<A> for ClassifiedSingletonContraction {
+    fn contract_singleton<'a>(&self, tensor: &'a ArrayViewD<'a, A>) -> ArrayD<A>
     where
         A: Clone + LinalgScalar,
     {
-        einsum_singleton_norepeats(&self, &tensor)
+        let output_index_order: Vec<char> = self.output_indices.iter().map(|x| x.index).collect();
+        let permuted_input =
+            move_output_indices_to_front(&self.input_indices, &output_index_order, tensor);
+        let mut result = permuted_input.sum_axis(Axis(self.output_indices.len()));
+        for _ in 1..self.summed_indices.len() {
+            result = result.sum_axis(Axis(self.output_indices.len()));
+        }
+        result
     }
 }
