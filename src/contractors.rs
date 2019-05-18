@@ -32,20 +32,7 @@ pub trait PairContractor<A> {
 struct Identity {}
 
 impl Identity {
-    fn new(sc: &SizedContraction) -> Self {
-        let SizedContraction {
-            contraction:
-                Contraction {
-                    ref operand_indices,
-                    ref output_indices,
-                    ..
-                },
-            ..
-        } = sc;
-
-        assert_eq!(operand_indices.len(), 1);
-        assert_eq!(&operand_indices[0], output_indices);
-
+    fn new() -> Self {
         Identity {}
     }
 }
@@ -161,6 +148,28 @@ impl<A> SingletonContractor<A> for Summation {
     }
 }
 
+#[derive(Clone, Debug)]
+struct Diagonalization {
+}
+
+impl Diagonalization {
+    fn new(start_index: usize, num_summed_axes: usize) -> Self {
+        Diagonalization {
+        }
+    }
+}
+
+impl<A> SingletonContractor<A> for Diagonalization {
+    fn contract_singleton<'a, 'b>(&self, tensor: &'b ArrayViewD<'a, A>) -> ArrayD<A>
+    where
+        'a: 'b,
+        A: Clone + LinalgScalar,
+    {
+        let result = tensor.view().into_owned();
+        result
+    }
+}
+
 struct ViewAndSummation<'t, A> {
     view: Box<dyn SingletonViewer<A> + 't>,
     summation: Summation,
@@ -184,7 +193,12 @@ impl<'t, A> ViewAndSummation<'t, A> {
             }
         }
 
-        let view = Box::new(Permutation::from_indices(&permutation));
+        let view: Box<dyn SingletonViewer<A>> =
+            if permutation == (0..(csc.input_indices.len())).collect::<Vec<usize>>() {
+                Box::new(Identity::new())
+            } else {
+                Box::new(Permutation::from_indices(&permutation))
+            };
         let summation = Summation::new(csc.output_indices.len(), csc.summed_indices.len());
 
         ViewAndSummation { view, summation }

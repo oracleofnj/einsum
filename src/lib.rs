@@ -96,22 +96,6 @@ pub struct ClassifiedDedupedPairContraction {
     outer_indices: OuterIndexMap,
 }
 
-// How this could work:
-//
-// Make an AST
-//
-// A "complex" singleton contraction is a (possibly empty) list
-// of "simple" singleton contractions
-//
-// A "simple" singleton contraction is either a diagonalization, a sum,
-// or a permutation
-//
-// A "complex" pair contraction is a singleton contraction for
-// the LHS, a singleton contraction for the RHS, and a
-// simplified pair contraction
-//
-// A simplified pair contraction is the a stacked deduped etc.
-
 pub trait ArrayLike<A> {
     fn into_dyn_view(&self) -> ArrayView<A, IxDyn>;
 }
@@ -263,55 +247,6 @@ fn generate_classified_pair_contraction(
     }
 }
 
-// fn move_output_indices_to_front<'a, A: LinalgScalar>(
-//     input_indices: &[IndexWithSingletonInfo],
-//     output_index_order: &[char],
-//     tensor: &'a ArrayViewD<'a, A>,
-// ) -> ArrayViewD<'a, A> {
-//     let mut permutation: Vec<usize> = Vec::new();
-//
-//     for &c in output_index_order {
-//         let input_pos = input_indices.iter().position(|idx| idx.index == c).unwrap();
-//         permutation.push(input_pos);
-//     }
-//
-//     for (i, idx) in input_indices.iter().enumerate() {
-//         if let SingletonIndexInfo::SummedInfo(_) = idx.index_info {
-//             permutation.push(i);
-//         }
-//     }
-//
-//     tensor.view().permuted_axes(permutation)
-// }
-//
-// fn einsum_singleton_norepeats<'a, A: LinalgScalar>(
-//     csc: &ClassifiedSingletonContraction,
-//     tensor: &'a ArrayViewD<'a, A>,
-// ) -> ArrayD<A> {
-//     // Handles the case where it's ijk->ik; just sums
-//     assert_eq!(csc.diagonalized_indices.len(), 0);
-//     assert_eq!(
-//         csc.summed_indices
-//             .values()
-//             .filter(|x| x.positions.len() != 1)
-//             .count(),
-//         0
-//     );
-//
-//     let output_index_order: Vec<char> = csc.output_indices.iter().map(|x| x.index).collect();
-//     let permuted_input =
-//         move_output_indices_to_front(&csc.input_indices, &output_index_order, tensor);
-//     if csc.summed_indices.len() == 0 {
-//         permuted_input.into_owned()
-//     } else {
-//         let mut result = permuted_input.sum_axis(Axis(csc.output_indices.len()));
-//         for _ in 1..csc.summed_indices.len() {
-//             result = result.sum_axis(Axis(csc.output_indices.len()));
-//         }
-//         result
-//     }
-// }
-//
 // TODO: Replace this by calculating the right dimensions and strides to use
 // TODO: Take a &mut ClassifiedSingletonContraction and mutate it
 fn diagonalize_singleton<A: LinalgScalar>(

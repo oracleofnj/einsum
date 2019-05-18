@@ -11,6 +11,8 @@ where
 }
 
 fn main() {
+    let v1 = vec![0, 1, 2];
+    println!("{}", v1 == (0..3).collect::<Vec<usize>>());
     let mut max = 0.;
     for _ in 0..1000 {
         let m1 = rand_array((500, 500));
@@ -21,5 +23,4 @@ fn main() {
         max = if max > hm { max } else { hm }
     }
     println!("{}", max);
-
 }
