@@ -150,12 +150,58 @@ impl<A> SingletonContractor<A> for Summation {
 
 #[derive(Clone, Debug)]
 struct Diagonalization {
+    input_to_output_mapping: Vec<usize>,
+    output_shape: Vec<usize>,
 }
 
 impl Diagonalization {
-    fn new(start_index: usize, num_summed_axes: usize) -> Self {
+    fn new(sc: &SizedContraction) -> Self {
+        let SizedContraction {
+            contraction:
+                Contraction {
+                    ref operand_indices,
+                    ref output_indices,
+                    ..
+                },
+            ref output_size,
+        } = sc;
+        assert_eq!(operand_indices.len(), 1);
+
+        let output_shape = output_indices.iter().map(|c| output_size[c]).collect();
+        let input_to_output_mapping = operand_indices[0]
+            .iter()
+            .map(|&c| output_indices.iter().position(|&x| x == c).unwrap())
+            .collect();
+
         Diagonalization {
+            input_to_output_mapping,
+            output_shape,
         }
+    }
+}
+
+impl<A> SingletonViewer<A> for Diagonalization {
+    fn view_singleton<'a, 'b>(&self, tensor: &'b ArrayViewD<'a, A>) -> ArrayViewD<'b, A>
+    where
+        'a: 'b,
+        A: Clone + LinalgScalar,
+    {
+        // Construct the stride array on the fly by enumerating (idx, stride) from strides() and
+        // adding stride to self.which_index_is_this
+        let mut strides = vec![0; self.output_shape.len()];
+        for (idx, &stride) in tensor.strides().iter().enumerate() {
+            assert!(stride > 0);
+            strides[self.input_to_output_mapping[idx]] += stride as usize;
+        }
+
+        // Output shape we want is already stored in self.output_shape
+        // let t = ArrayView::from_shape(IxDyn(&[3]).strides(IxDyn(&[4])), &sl).unwrap();
+        let data_slice = tensor.as_slice_memory_order().unwrap();
+        ArrayView::from_shape(
+            IxDyn(&self.output_shape).strides(IxDyn(&strides)),
+            &data_slice,
+        )
+        .unwrap()
     }
 }
 
@@ -165,8 +211,11 @@ impl<A> SingletonContractor<A> for Diagonalization {
         'a: 'b,
         A: Clone + LinalgScalar,
     {
-        let result = tensor.view().into_owned();
-        result
+        // We're only using this method if the tensor is not contiguous
+        // Clones twice as a result
+        let cloned_tensor: ArrayD<A> =
+            Array::from_shape_vec(tensor.raw_dim(), tensor.iter().cloned().collect()).unwrap();
+        self.view_singleton(&cloned_tensor.view()).into_owned()
     }
 }
 

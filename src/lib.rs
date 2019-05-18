@@ -798,7 +798,6 @@ fn einsum_pair_allused_deduped_indices<A: LinalgScalar>(
             .unwrap()
             .permuted_axes(permutation)
     }
-
 }
 
 fn einsum_pair<'a, A: LinalgScalar>(

@@ -20,7 +20,6 @@ fn _test_parses() {
         "ij,ja->ai",
         "ij,ja->ia",
         "ii->i",
-
         // Implicit
         "ij,k",
         "i",
@@ -29,13 +28,11 @@ fn _test_parses() {
         "i,j,klm,nop",
         "ij,jk",
         "ij,ja",
-
         // Illegal
         "->i",
         "i,",
         "->",
         "i,,,j->k",
-
         // Legal parse but illegal outputs
         "i,j,k,l,m->p",
         "i,j->ijj",
@@ -156,7 +153,6 @@ fn it_collapses_a_singleton_with_multiple_repeats() {
 
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
-
 
 #[test]
 fn it_collapses_a_singleton_with_a_repeat_that_gets_summed() {
@@ -612,7 +608,6 @@ fn deduped_handles_outer_product_mat_mat() {
     let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
-
 
 #[test]
 fn deduped_handles_matrix_product_1() {
