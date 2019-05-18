@@ -32,7 +32,9 @@ pub use optimizers::{
 };
 
 mod contractors;
-pub use contractors::{SingletonContraction, SingletonContractor};
+pub use contractors::{
+    Diagonalization, SingletonContraction, SingletonContractor, SingletonViewer,
+};
 
 mod classifiers;
 
@@ -956,6 +958,24 @@ pub fn einsum<A: LinalgScalar>(
 ) -> Result<ArrayD<A>, &'static str> {
     let sized_contraction = validate_and_size(input_string, operands)?;
     Ok(einsum_sc(&sized_contraction, operands))
+}
+
+pub fn this_test_is_annoying() {
+    let sh = vec![2,2,3];
+    let perm: Vec<usize> = vec![2,0,1];
+    let mut total_len = 1;
+    for &i in sh.iter() {total_len *= i;}
+    let elems: Vec<usize> = (0..total_len).collect();
+    let s = Array::from_shape_vec(IxDyn(&sh), elems).unwrap();
+
+    let s_dyn = s.view().into_dyn().permuted_axes(perm);
+    println!("{:?}", &s_dyn);
+    let sc = validate_and_size("jii->ij", &[&s_dyn]);
+    let diag = Diagonalization::new(&sc.unwrap());
+    let v = diag.view_singleton(&s_dyn);
+    println!("");
+    println!("{:?}", v);
+
 }
 
 mod wasm_bindings;

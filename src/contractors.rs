@@ -149,13 +149,13 @@ impl<A> SingletonContractor<A> for Summation {
 }
 
 #[derive(Clone, Debug)]
-struct Diagonalization {
+pub struct Diagonalization {
     input_to_output_mapping: Vec<usize>,
     output_shape: Vec<usize>,
 }
 
 impl Diagonalization {
-    fn new(sc: &SizedContraction) -> Self {
+    pub fn new(sc: &SizedContraction) -> Self {
         let SizedContraction {
             contraction:
                 Contraction {
