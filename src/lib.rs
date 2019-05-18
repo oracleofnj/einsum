@@ -34,6 +34,8 @@ pub use optimizers::{
 mod contractors;
 pub use contractors::{SingletonContraction, SingletonContractor};
 
+mod classifiers;
+
 #[derive(Clone, Debug)]
 pub struct StackIndex {
     // Which dimension of the LHS tensor does this index correspond to
