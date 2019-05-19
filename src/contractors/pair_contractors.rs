@@ -174,10 +174,6 @@ impl TensordotGeneral {
         lhs_axes: &[usize],
         rhs_axes: &[usize],
     ) -> Self {
-        println!("lhs_shape: {:?}", lhs_shape);
-        println!("rhs_shape: {:?}", rhs_shape);
-        println!("lhs_axes: {:?}", lhs_axes);
-        println!("rhs_axes: {:?}", rhs_axes);
         let num_contracted_axes = lhs_axes.len();
         assert!(num_contracted_axes == rhs_axes.len());
         let lhs_uniques: HashSet<_> = lhs_axes.iter().cloned().collect();
