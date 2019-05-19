@@ -34,8 +34,6 @@ pub use optimizers::{
 mod contractors;
 pub use contractors::{SingletonContraction, SingletonContractor};
 
-mod classifiers;
-
 #[derive(Clone, Debug)]
 pub struct StackIndex {
     // Which dimension of the LHS tensor does this index correspond to
@@ -247,105 +245,12 @@ fn generate_classified_pair_contraction(
     }
 }
 
-// TODO: Replace this by calculating the right dimensions and strides to use
-// TODO: Take a &mut ClassifiedSingletonContraction and mutate it
-fn diagonalize_singleton<A: LinalgScalar>(
-    tensor: &ArrayViewD<A>,
-    axes: &[usize],
-    destination_axis: usize,
-) -> ArrayD<A> {
-    // TODO: Replace this now that I understand how to use assign()
-    assert!(axes.len() > 0);
-    let axis_length = tensor.shape()[axes[0]];
-    let slices: Vec<_> = (0..axis_length)
-        .map(|i| {
-            let mut subview = tensor.view().into_owned();
-            let mut foo = Vec::from(axes);
-            foo.sort();
-            for &j in foo.iter().rev() {
-                subview = subview.index_axis_move(Axis(j), i);
-            }
-            subview.insert_axis(Axis(destination_axis))
-        })
-        .collect();
-    let slice_views: Vec<_> = slices.iter().map(|s| s.view()).collect();
-    ndarray::stack(Axis(destination_axis), &slice_views).unwrap()
-}
-
-// TODO: Take a &mut ClassifiedSingletonContraction and mutate it instead
-// of mutating operand_indices
-fn diagonalize_singleton_char<A>(
-    tensor: &mut ArrayD<A>,
-    operand_indices: &mut Vec<char>,
-    repeated_index: char,
-) where
-    A: LinalgScalar,
-{
-    let mut new_indices = Vec::new();
-    let mut axes = Vec::new();
-    new_indices.push(repeated_index);
-    for (i, &c) in operand_indices.iter().enumerate() {
-        if c != repeated_index {
-            new_indices.push(c);
-        } else {
-            axes.push(i);
-        }
-    }
-    let new_tensor = diagonalize_singleton(&tensor.view(), &axes, 0);
-
-    *tensor = new_tensor;
-    *operand_indices = new_indices;
-}
-
-// TODO: Figure out correct magic with strides and dimensions
-// TODO: Take a ClassifiedSingletonContraction instead of a
-//       SizedContraction
 pub fn einsum_singleton<'a, A: LinalgScalar>(
     sized_contraction: &SizedContraction,
     tensor: &'a ArrayViewD<'a, A>,
 ) -> ArrayD<A> {
     let csc = SingletonContraction::new(&sized_contraction);
     csc.contract_singleton(tensor)
-
-
-    // Handles the case where it's iijk->ik; just diagonalization + sums
-    // assert!(sized_contraction.contraction.operand_indices.len() == 1);
-    // let mut distinct_elements = HashSet::new();
-    // let mut repeated_elements = HashSet::new();
-    // for &c in sized_contraction.contraction.operand_indices[0].iter() {
-    //     if distinct_elements.contains(&c) {
-    //         repeated_elements.insert(c);
-    //     } else {
-    //         distinct_elements.insert(c);
-    //     }
-    // }
-    //
-    // let no_repeated_elements = repeated_elements.len() == 0;
-    //
-    // if no_repeated_elements {
-    //     let csc = SingletonContraction::new(&sized_contraction);
-    //     csc.contract_singleton(tensor)
-    // } else {
-    //     let mut operand_indices = sized_contraction.contraction.operand_indices[0].clone();
-    //     let mut modified_tensor = tensor.view().into_owned();
-    //
-    //     for &c in repeated_elements.iter() {
-    //         diagonalize_singleton_char(&mut modified_tensor, &mut operand_indices, c);
-    //     }
-    //
-    //     // TODO: Just make the new contraction directly
-    //     let operand_indices_str: String = operand_indices.iter().collect();
-    //     let output_str: String = sized_contraction
-    //         .contraction
-    //         .output_indices
-    //         .iter()
-    //         .collect();
-    //     let new_einsum_string = format!("{}->{}", operand_indices_str, output_str);
-    //     let new_contraction = validate_and_size(&new_einsum_string, &[&modified_tensor]).unwrap();
-    //
-    //     let csc = SingletonContraction::new(&new_contraction);
-    //     csc.contract_singleton(&modified_tensor.view())
-    // }
 }
 
 fn tensordot_fixed_order<A: LinalgScalar>(

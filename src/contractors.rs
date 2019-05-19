@@ -1,8 +1,7 @@
 use crate::{Contraction, SizedContraction};
 use ndarray::prelude::*;
 use ndarray::LinalgScalar;
-
-use crate::classifiers::*;
+use std::collections::HashMap;
 
 pub trait SingletonViewer<A> {
     fn view_singleton<'a, 'b>(&self, tensor: &'b ArrayViewD<'a, A>) -> ArrayViewD<'b, A>
@@ -238,30 +237,38 @@ struct ViewAndSummation<'t, A> {
 }
 
 impl<'t, A> ViewAndSummation<'t, A> {
-    fn new(csc: &ClassifiedSingletonContraction) -> Self {
+    fn new(sc: &SizedContraction) -> Self {
         let mut permutation: Vec<usize> = Vec::new();
 
-        for output_index in csc.output_indices.iter() {
-            let input_pos = csc
-                .input_indices
+        for &output_char in sc.contraction.output_indices.iter() {
+            let input_pos = sc.contraction.operand_indices[0]
                 .iter()
-                .position(|idx| idx.index == output_index.index)
+                .position(|&input_char| input_char == output_char)
                 .unwrap();
             permutation.push(input_pos);
         }
-        for (i, idx) in csc.input_indices.iter().enumerate() {
-            if let SingletonIndexInfo::SummedInfo(_) = idx.index_info {
+        for (i, &input_char) in sc.contraction.operand_indices[0].iter().enumerate() {
+            if let None = sc
+                .contraction
+                .output_indices
+                .iter()
+                .position(|&output_char| output_char == input_char)
+            {
                 permutation.push(i);
             }
         }
 
-        let view: Box<dyn SingletonViewer<A>> =
-            if permutation == (0..(csc.input_indices.len())).collect::<Vec<usize>>() {
-                Box::new(Identity::new())
-            } else {
-                Box::new(Permutation::from_indices(&permutation))
-            };
-        let summation = Summation::new(csc.output_indices.len(), csc.summed_indices.len());
+        let view: Box<dyn SingletonViewer<A>> = if permutation
+            == (0..(sc.contraction.operand_indices[0].len())).collect::<Vec<usize>>()
+        {
+            Box::new(Identity::new())
+        } else {
+            Box::new(Permutation::from_indices(&permutation))
+        };
+        let summation = Summation::new(
+            sc.contraction.output_indices.len(),
+            sc.contraction.operand_indices[0].len() - sc.contraction.output_indices.len(),
+        );
 
         ViewAndSummation { view, summation }
     }
@@ -284,16 +291,12 @@ struct DiagonalizationAndSummation {
 }
 
 impl DiagonalizationAndSummation {
-    fn new(sc: &SizedContraction, csc: &ClassifiedSingletonContraction) -> Self {
+    fn new(sc: &SizedContraction) -> Self {
         let diagonalization = Diagonalization::new(sc);
         let summation = Summation::new(
-            csc.output_indices.len(),
-            diagonalization.output_shape.len() - csc.output_indices.len(),
+            sc.contraction.output_indices.len(),
+            diagonalization.output_shape.len() - sc.contraction.output_indices.len(),
         );
-        println!("csc: {:?}", csc);
-        println!("sc: {:?}", sc);
-        println!("diag: {:?}", diagonalization);
-        println!("summ: {:?}", summation);
 
         DiagonalizationAndSummation {
             diagonalization,
@@ -320,9 +323,15 @@ pub struct SingletonContraction<'t, A> {
 
 impl<'t, A: 't> SingletonContraction<'t, A> {
     pub fn new(sc: &SizedContraction) -> Self {
-        let csc = ClassifiedSingletonContraction::new(sc);
+        assert_eq!(sc.contraction.operand_indices.len(), 1);
+        let mut input_counts = HashMap::new();
+        for &c in sc.contraction.operand_indices[0].iter() {
+            *input_counts.entry(c).or_insert(0) += 1;
+        }
+        let num_summed_axes = input_counts.len() - sc.contraction.output_indices.len();
+        let num_diagonalized_axes = input_counts.iter().filter(|(_, &v)| v > 1).count();
 
-        match (csc.summed_indices.len(), csc.diagonalized_indices.len()) {
+        match (num_summed_axes, num_diagonalized_axes) {
             (0, 0) => {
                 let permutation = Permutation::new(sc);
                 SingletonContraction {
@@ -330,34 +339,19 @@ impl<'t, A: 't> SingletonContraction<'t, A> {
                 }
             }
             (_, 0) => {
-                println!(
-                    "{} {}",
-                    csc.summed_indices.len(),
-                    csc.diagonalized_indices.len()
-                );
-                let view_and_summation = ViewAndSummation::new(&csc);
+                let view_and_summation = ViewAndSummation::new(sc);
                 SingletonContraction {
                     op: Box::new(view_and_summation),
                 }
             }
             (0, _) => {
-                println!(
-                    "{} {}",
-                    csc.summed_indices.len(),
-                    csc.diagonalized_indices.len()
-                );
                 let diagonalization = Diagonalization::new(sc);
                 SingletonContraction {
                     op: Box::new(diagonalization),
                 }
             }
             (_, _) => {
-                println!(
-                    "{} {}",
-                    csc.summed_indices.len(),
-                    csc.diagonalized_indices.len()
-                );
-                let diagonalization_and_summation = DiagonalizationAndSummation::new(sc, &csc);
+                let diagonalization_and_summation = DiagonalizationAndSummation::new(sc);
                 SingletonContraction {
                     op: Box::new(diagonalization_and_summation),
                 }
