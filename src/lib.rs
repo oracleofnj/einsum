@@ -78,43 +78,6 @@ where
     // Basically you reshape each one into a 2-D matrix (no matter what
     // the starting size was) and then do a matrix multiplication
 
-    // let mut len_uncontracted_lhs = 1;
-    // let mut len_uncontracted_rhs = 1;
-    // let mut len_contracted_lhs = 1;
-    // let mut len_contracted_rhs = 1;
-    // let mut output_shape = Vec::<usize>::new();
-    // let num_axes_lhs = lhs.ndim();
-    // for (axis, &axis_length) in lhs.shape().iter().enumerate() {
-    //     if axis < (num_axes_lhs - last_n) {
-    //         len_uncontracted_lhs *= axis_length;
-    //         output_shape.push(axis_length);
-    //     } else {
-    //         len_contracted_lhs *= axis_length;
-    //     }
-    // }
-    // for (axis, &axis_length) in rhs.shape().iter().enumerate() {
-    //     if axis < last_n {
-    //         len_contracted_rhs *= axis_length;
-    //     } else {
-    //         len_uncontracted_rhs *= axis_length;
-    //         output_shape.push(axis_length);
-    //     }
-    // }
-    // let matrix1 = Array::from_shape_vec(
-    //     [len_uncontracted_lhs, len_contracted_lhs],
-    //     lhs.iter().cloned().collect(),
-    // )
-    // .unwrap();
-    // let matrix2 = Array::from_shape_vec(
-    //     [len_contracted_rhs, len_uncontracted_rhs],
-    //     rhs.iter().cloned().collect(),
-    // )
-    // .unwrap();
-    //
-    // matrix1
-    //     .dot(&matrix2)
-    //     .into_shape(IxDyn(&output_shape))
-    //     .unwrap()
     let tensordotter = TensordotFixedPosition::from_shapes_and_number_of_contracted_axes(
         &lhs.shape(),
         &rhs.shape(),
