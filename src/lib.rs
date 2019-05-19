@@ -32,9 +32,7 @@ pub use optimizers::{
 };
 
 mod contractors;
-pub use contractors::{
-    Diagonalization, SingletonContraction, SingletonContractor, SingletonViewer,
-};
+pub use contractors::{SingletonContraction, SingletonContractor};
 
 mod classifiers;
 
@@ -306,44 +304,48 @@ pub fn einsum_singleton<'a, A: LinalgScalar>(
     sized_contraction: &SizedContraction,
     tensor: &'a ArrayViewD<'a, A>,
 ) -> ArrayD<A> {
+    let csc = SingletonContraction::new(&sized_contraction);
+    csc.contract_singleton(tensor)
+
+
     // Handles the case where it's iijk->ik; just diagonalization + sums
-    assert!(sized_contraction.contraction.operand_indices.len() == 1);
-    let mut distinct_elements = HashSet::new();
-    let mut repeated_elements = HashSet::new();
-    for &c in sized_contraction.contraction.operand_indices[0].iter() {
-        if distinct_elements.contains(&c) {
-            repeated_elements.insert(c);
-        } else {
-            distinct_elements.insert(c);
-        }
-    }
-
-    let no_repeated_elements = repeated_elements.len() == 0;
-
-    if no_repeated_elements {
-        let csc = SingletonContraction::new(&sized_contraction);
-        csc.contract_singleton(tensor)
-    } else {
-        let mut operand_indices = sized_contraction.contraction.operand_indices[0].clone();
-        let mut modified_tensor = tensor.view().into_owned();
-
-        for &c in repeated_elements.iter() {
-            diagonalize_singleton_char(&mut modified_tensor, &mut operand_indices, c);
-        }
-
-        // TODO: Just make the new contraction directly
-        let operand_indices_str: String = operand_indices.iter().collect();
-        let output_str: String = sized_contraction
-            .contraction
-            .output_indices
-            .iter()
-            .collect();
-        let new_einsum_string = format!("{}->{}", operand_indices_str, output_str);
-        let new_contraction = validate_and_size(&new_einsum_string, &[&modified_tensor]).unwrap();
-
-        let csc = SingletonContraction::new(&new_contraction);
-        csc.contract_singleton(&modified_tensor.view())
-    }
+    // assert!(sized_contraction.contraction.operand_indices.len() == 1);
+    // let mut distinct_elements = HashSet::new();
+    // let mut repeated_elements = HashSet::new();
+    // for &c in sized_contraction.contraction.operand_indices[0].iter() {
+    //     if distinct_elements.contains(&c) {
+    //         repeated_elements.insert(c);
+    //     } else {
+    //         distinct_elements.insert(c);
+    //     }
+    // }
+    //
+    // let no_repeated_elements = repeated_elements.len() == 0;
+    //
+    // if no_repeated_elements {
+    //     let csc = SingletonContraction::new(&sized_contraction);
+    //     csc.contract_singleton(tensor)
+    // } else {
+    //     let mut operand_indices = sized_contraction.contraction.operand_indices[0].clone();
+    //     let mut modified_tensor = tensor.view().into_owned();
+    //
+    //     for &c in repeated_elements.iter() {
+    //         diagonalize_singleton_char(&mut modified_tensor, &mut operand_indices, c);
+    //     }
+    //
+    //     // TODO: Just make the new contraction directly
+    //     let operand_indices_str: String = operand_indices.iter().collect();
+    //     let output_str: String = sized_contraction
+    //         .contraction
+    //         .output_indices
+    //         .iter()
+    //         .collect();
+    //     let new_einsum_string = format!("{}->{}", operand_indices_str, output_str);
+    //     let new_contraction = validate_and_size(&new_einsum_string, &[&modified_tensor]).unwrap();
+    //
+    //     let csc = SingletonContraction::new(&new_contraction);
+    //     csc.contract_singleton(&modified_tensor.view())
+    // }
 }
 
 fn tensordot_fixed_order<A: LinalgScalar>(
@@ -958,24 +960,6 @@ pub fn einsum<A: LinalgScalar>(
 ) -> Result<ArrayD<A>, &'static str> {
     let sized_contraction = validate_and_size(input_string, operands)?;
     Ok(einsum_sc(&sized_contraction, operands))
-}
-
-pub fn this_test_is_annoying() {
-    let sh = vec![2,2,3];
-    let perm: Vec<usize> = vec![2,0,1];
-    let mut total_len = 1;
-    for &i in sh.iter() {total_len *= i;}
-    let elems: Vec<usize> = (0..total_len).collect();
-    let s = Array::from_shape_vec(IxDyn(&sh), elems).unwrap();
-
-    let s_dyn = s.view().into_dyn().permuted_axes(perm);
-    println!("{:?}", &s_dyn);
-    let sc = validate_and_size("jii->ij", &[&s_dyn]);
-    let diag = Diagonalization::new(&sc.unwrap());
-    let v = diag.view_singleton(&s_dyn);
-    println!("");
-    println!("{:?}", v);
-
 }
 
 mod wasm_bindings;

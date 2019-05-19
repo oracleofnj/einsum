@@ -149,13 +149,13 @@ impl<A> SingletonContractor<A> for Summation {
 }
 
 #[derive(Clone, Debug)]
-pub struct Diagonalization {
+struct Diagonalization {
     input_to_output_mapping: Vec<usize>,
     output_shape: Vec<usize>,
 }
 
 impl Diagonalization {
-    pub fn new(sc: &SizedContraction) -> Self {
+    fn new(sc: &SizedContraction) -> Self {
         let SizedContraction {
             contraction:
                 Contraction {
@@ -167,10 +167,23 @@ impl Diagonalization {
         } = sc;
         assert_eq!(operand_indices.len(), 1);
 
-        let output_shape = output_indices.iter().map(|c| output_size[c]).collect();
-        let input_to_output_mapping = operand_indices[0]
+        let mut adjusted_output_indices = output_indices.clone();
+        let mut input_to_output_mapping = Vec::new();
+        for &c in operand_indices[0].iter() {
+            let current_length = adjusted_output_indices.len();
+            match adjusted_output_indices.iter().position(|&x| x == c) {
+                Some(pos) => {
+                    input_to_output_mapping.push(pos);
+                }
+                None => {
+                    adjusted_output_indices.push(c);
+                    input_to_output_mapping.push(current_length);
+                }
+            }
+        }
+        let output_shape = adjusted_output_indices
             .iter()
-            .map(|&c| output_indices.iter().position(|&x| x == c).unwrap())
+            .map(|c| output_size[c])
             .collect();
 
         Diagonalization {
@@ -265,6 +278,42 @@ impl<'t, A> SingletonContractor<A> for ViewAndSummation<'t, A> {
     }
 }
 
+struct DiagonalizationAndSummation {
+    diagonalization: Diagonalization,
+    summation: Summation,
+}
+
+impl DiagonalizationAndSummation {
+    fn new(sc: &SizedContraction, csc: &ClassifiedSingletonContraction) -> Self {
+        let diagonalization = Diagonalization::new(sc);
+        let summation = Summation::new(
+            csc.output_indices.len(),
+            diagonalization.output_shape.len() - csc.output_indices.len(),
+        );
+        println!("csc: {:?}", csc);
+        println!("sc: {:?}", sc);
+        println!("diag: {:?}", diagonalization);
+        println!("summ: {:?}", summation);
+
+        DiagonalizationAndSummation {
+            diagonalization,
+            summation,
+        }
+    }
+}
+
+impl<A> SingletonContractor<A> for DiagonalizationAndSummation {
+    fn contract_singleton<'a, 'b>(&self, tensor: &'b ArrayViewD<'a, A>) -> ArrayD<A>
+    where
+        'a: 'b,
+        A: Clone + LinalgScalar,
+    {
+        // TODO RIGHT NOW: Check strides and all
+        let viewed_singleton = self.diagonalization.view_singleton(tensor);
+        self.summation.contract_singleton(&viewed_singleton)
+    }
+}
+
 pub struct SingletonContraction<'t, A> {
     op: Box<dyn SingletonContractor<A> + 't>,
 }
@@ -273,15 +322,45 @@ impl<'t, A: 't> SingletonContraction<'t, A> {
     pub fn new(sc: &SizedContraction) -> Self {
         let csc = ClassifiedSingletonContraction::new(sc);
 
-        if csc.summed_indices.len() == 0 {
-            let permutation = Permutation::new(sc);
-            SingletonContraction {
-                op: Box::new(permutation),
+        match (csc.summed_indices.len(), csc.diagonalized_indices.len()) {
+            (0, 0) => {
+                let permutation = Permutation::new(sc);
+                SingletonContraction {
+                    op: Box::new(permutation),
+                }
             }
-        } else {
-            let view_and_summation = ViewAndSummation::new(&csc);
-            SingletonContraction {
-                op: Box::new(view_and_summation),
+            (_, 0) => {
+                println!(
+                    "{} {}",
+                    csc.summed_indices.len(),
+                    csc.diagonalized_indices.len()
+                );
+                let view_and_summation = ViewAndSummation::new(&csc);
+                SingletonContraction {
+                    op: Box::new(view_and_summation),
+                }
+            }
+            (0, _) => {
+                println!(
+                    "{} {}",
+                    csc.summed_indices.len(),
+                    csc.diagonalized_indices.len()
+                );
+                let diagonalization = Diagonalization::new(sc);
+                SingletonContraction {
+                    op: Box::new(diagonalization),
+                }
+            }
+            (_, _) => {
+                println!(
+                    "{} {}",
+                    csc.summed_indices.len(),
+                    csc.diagonalized_indices.len()
+                );
+                let diagonalization_and_summation = DiagonalizationAndSummation::new(sc, &csc);
+                SingletonContraction {
+                    op: Box::new(diagonalization_and_summation),
+                }
             }
         }
     }

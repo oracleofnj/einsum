@@ -1,4 +1,3 @@
-use einsum::this_test_is_annoying;
 use einsum::einsum;
 use ndarray::prelude::*;
 use ndarray_rand::RandomExt;
@@ -12,7 +11,6 @@ where
 }
 
 fn main() {
-    this_test_is_annoying();
     let mut max = 0.;
     for _ in 0..10 {
         let m1 = rand_array((50, 50));
