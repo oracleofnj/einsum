@@ -91,6 +91,25 @@ fn it_transposes_a_matrix() {
 }
 
 #[test]
+fn it_collapses_a_singleton_with_noncontiguous_strides() {
+    // [?] -> ii -> <empty>
+    let cube = rand_array((4, 4, 4));
+
+    let data_slice = cube.as_slice_memory_order().unwrap();
+    let output_shape = vec![4, 4];
+    let strides = vec![17, 4];
+    let square =
+        ArrayView::from_shape(IxDyn(&output_shape).strides(IxDyn(&strides)), &data_slice).unwrap();
+
+    let correct_answer = arr0(square.diag().sum());
+
+    let sc = validate_and_size("ii->", &[&square]).unwrap();
+    let collapsed = einsum_sc(&sc, &[&square]);
+
+    assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
+}
+
+#[test]
 fn it_collapses_a_singleton_without_repeats() {
     // ijkl->lij
     let s = rand_array((4, 2, 3, 5));

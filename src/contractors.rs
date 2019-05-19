@@ -311,8 +311,15 @@ impl<A> SingletonContractor<A> for DiagonalizationAndSummation {
         'a: 'b,
         A: Clone + LinalgScalar,
     {
-        // TODO RIGHT NOW: Check strides and all
-        let viewed_singleton = self.diagonalization.view_singleton(tensor);
+        let contracted_singleton;
+        let viewed_singleton = if tensor.as_slice_memory_order().is_some()
+            && tensor.strides().iter().all(|&stride| stride > 0)
+        {
+            self.diagonalization.view_singleton(tensor)
+        } else {
+            contracted_singleton = self.diagonalization.contract_singleton(tensor);
+            contracted_singleton.view()
+        };
         self.summation.contract_singleton(&viewed_singleton)
     }
 }
