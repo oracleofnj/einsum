@@ -91,6 +91,16 @@ fn it_transposes_a_matrix() {
 }
 
 #[test]
+fn it_clones_a_matrix() {
+    let rect_matrix = rand_array((2, 5));
+
+    let correct_answer = rect_matrix.view().into_dyn();
+
+    let cloned = einsum("ij->ij", &[&rect_matrix]).unwrap();
+    assert!(correct_answer.all_close(&cloned, TOL));
+}
+
+#[test]
 fn it_collapses_a_singleton_with_noncontiguous_strides() {
     // [?] -> ii -> <empty>
     let cube = rand_array((4, 4, 4));
