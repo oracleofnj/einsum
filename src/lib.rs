@@ -35,6 +35,7 @@ pub use optimizers::{
 mod contractors;
 pub use contractors::{
     PairContractor, SingletonContraction, SingletonContractor, TensordotFixedPosition,
+    TensordotGeneral,
 };
 
 mod classifiers;
@@ -93,7 +94,7 @@ pub fn tensordot<A, S, S2, D, E>(
     rhs_axes: &[Axis],
 ) -> ArrayD<A>
 where
-    A: ndarray::LinalgScalar,
+    A: std::fmt::Debug + ndarray::LinalgScalar,
     S: Data<Elem = A>,
     S2: Data<Elem = A>,
     D: Dimension,
@@ -130,10 +131,25 @@ where
     }
     let rolled_rhs = rhs.view().into_dyn().permuted_axes(permutation_rhs);
 
-    tensordot_fixed_order(&rolled_lhs, &rolled_rhs, lhs_axes.len())
+    let correct_answer = tensordot_fixed_order(&rolled_lhs, &rolled_rhs, lhs_axes.len());
+    
+    let lhs_axes_copy: Vec<_> = lhs_axes.iter().map(|x| x.index()).collect();
+    let rhs_axes_copy: Vec<_> = rhs_axes.iter().map(|x| x.index()).collect();
+    let tensordotter = TensordotGeneral::from_shapes_and_axis_numbers(
+        &lhs.shape(),
+        &rhs.shape(),
+        &lhs_axes_copy,
+        &rhs_axes_copy,
+    );
+    let wrong_answer = tensordotter.contract_pair(&lhs.view().into_dyn(), &rhs.view().into_dyn());
+
+    println!("{:?}", &correct_answer);
+    println!("{:?}", &wrong_answer);
+
+    correct_answer
 }
 
-fn einsum_pair_allused_nostacks_classified_deduped_indices<A: LinalgScalar>(
+fn einsum_pair_allused_nostacks_classified_deduped_indices<A: std::fmt::Debug + LinalgScalar>(
     classified_pair_contraction: &ClassifiedDedupedPairContraction,
     lhs: &ArrayViewD<A>,
     rhs: &ArrayViewD<A>,
@@ -186,7 +202,6 @@ fn einsum_pair_allused_nostacks_classified_deduped_indices<A: LinalgScalar>(
             output.assign(
                 &rhs.mapv(|x| x * lhs_0d)
                     .into_dyn()
-                    .view()
                     .permuted_axes(permutation),
             );
         }
@@ -216,7 +231,6 @@ fn einsum_pair_allused_nostacks_classified_deduped_indices<A: LinalgScalar>(
             output.assign(
                 &lhs.mapv(|x| x * rhs_0d)
                     .into_dyn()
-                    .view()
                     .permuted_axes(permutation),
             );
         }
@@ -258,16 +272,12 @@ fn einsum_pair_allused_nostacks_classified_deduped_indices<A: LinalgScalar>(
                 })
                 .collect();
 
-            output.assign(
-                &tensordot(lhs, rhs, &lhs_axes, &rhs_axes)
-                    .view()
-                    .permuted_axes(permutation),
-            );
+            output.assign(&tensordot(lhs, rhs, &lhs_axes, &rhs_axes).permuted_axes(permutation));
         }
     }
 }
 
-fn move_stack_indices_to_front<A: LinalgScalar>(
+fn move_stack_indices_to_front<A: std::fmt::Debug + LinalgScalar>(
     input_indices: &[IndexWithPairInfo],
     stack_index_order: &[char],
     tensor: &ArrayViewD<A>,
@@ -295,7 +305,7 @@ fn move_stack_indices_to_front<A: LinalgScalar>(
 }
 
 #[inline(never)]
-fn get_intermediate_result<A: LinalgScalar>(
+fn get_intermediate_result<A: std::fmt::Debug + LinalgScalar>(
     temp_shape: &[usize],
     lhs_reshaped: &ArrayD<A>,
     rhs_reshaped: &ArrayD<A>,
@@ -320,7 +330,7 @@ fn get_intermediate_result<A: LinalgScalar>(
     temp_result
 }
 
-fn einsum_pair_allused_deduped_indices<A: LinalgScalar>(
+fn einsum_pair_allused_deduped_indices<A: std::fmt::Debug + LinalgScalar>(
     sized_contraction: &SizedContraction,
     lhs: &ArrayViewD<A>,
     rhs: &ArrayViewD<A>,
@@ -491,7 +501,7 @@ fn einsum_pair_allused_deduped_indices<A: LinalgScalar>(
     }
 }
 
-fn einsum_pair<'a, A: LinalgScalar>(
+fn einsum_pair<'a, A: std::fmt::Debug + LinalgScalar>(
     sized_contraction: &SizedContraction,
     lhs: &'a ArrayViewD<'a, A>,
     rhs: &'a ArrayViewD<'a, A>,
@@ -600,7 +610,7 @@ fn einsum_pair<'a, A: LinalgScalar>(
 
 pub fn einsum_path<A>(path: &EinsumPath, operands: &[&ArrayLike<A>]) -> ArrayD<A>
 where
-    A: LinalgScalar,
+    A: std::fmt::Debug + LinalgScalar,
 {
     let EinsumPath {
         first_step:
@@ -633,7 +643,7 @@ where
     result
 }
 
-pub fn einsum_sc<A: LinalgScalar>(
+pub fn einsum_sc<A: std::fmt::Debug + LinalgScalar>(
     sized_contraction: &SizedContraction,
     operands: &[&ArrayLike<A>],
 ) -> ArrayD<A> {
@@ -641,7 +651,7 @@ pub fn einsum_sc<A: LinalgScalar>(
     einsum_path(&path, operands)
 }
 
-pub fn einsum<A: LinalgScalar>(
+pub fn einsum<A: std::fmt::Debug + LinalgScalar>(
     input_string: &str,
     operands: &[&dyn ArrayLike<A>],
 ) -> Result<ArrayD<A>, &'static str> {

@@ -61,7 +61,7 @@ impl Permutation {
         Permutation { permutation }
     }
 
-    fn from_indices(permutation: &[usize]) -> Self {
+    pub fn from_indices(permutation: &[usize]) -> Self {
         Permutation {
             permutation: permutation.to_vec(),
         }

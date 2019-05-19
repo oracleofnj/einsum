@@ -10,7 +10,7 @@ use singleton_contractors::{
 };
 
 mod pair_contractors;
-pub use pair_contractors::TensordotFixedPosition;
+pub use pair_contractors::{TensordotFixedPosition, TensordotGeneral};
 
 pub trait SingletonViewer<A> {
     fn view_singleton<'a, 'b>(&self, tensor: &'b ArrayViewD<'a, A>) -> ArrayViewD<'b, A>
@@ -35,7 +35,22 @@ pub trait PairContractor<A> {
     where
         'a: 'b,
         A: Clone + LinalgScalar;
+
+    fn contract_and_assign_pair<'a, 'b>(
+        &self,
+        lhs: &'b ArrayViewD<'a, A>,
+        rhs: &'b ArrayViewD<'a, A>,
+        out: &'b mut ArrayViewMutD<'a, A>,
+    ) where
+        'a: 'b,
+        A: Clone + LinalgScalar,
+    {
+        let result = self.contract_pair(lhs, rhs);
+        out.assign(&result);
+    }
 }
+
+
 pub struct SingletonContraction<A> {
     op: Box<dyn SingletonContractor<A>>,
 }
