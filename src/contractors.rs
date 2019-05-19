@@ -311,6 +311,13 @@ impl<A> SingletonContractor<A> for DiagonalizationAndSummation {
         'a: 'b,
         A: Clone + LinalgScalar,
     {
+        // We can only do Diagonalization directly as a view if all the strides are
+        // positive and if the tensor is contiguous. We can't know this just from
+        // looking at the SizedContraction; we need the actual tensor that will
+        // be operated on. So this needs to get checked at "runtime".
+        //
+        // If either condition fails, we use the contract_singleton version to
+        // create a new tensor and view() that intermediate result.
         let contracted_singleton;
         let viewed_singleton = if tensor.as_slice_memory_order().is_some()
             && tensor.strides().iter().all(|&stride| stride > 0)
@@ -320,6 +327,7 @@ impl<A> SingletonContractor<A> for DiagonalizationAndSummation {
             contracted_singleton = self.diagonalization.contract_singleton(tensor);
             contracted_singleton.view()
         };
+
         self.summation.contract_singleton(&viewed_singleton)
     }
 }
