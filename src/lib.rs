@@ -63,30 +63,6 @@ pub fn einsum_singleton<'a, A: LinalgScalar>(
     csc.contract_singleton(tensor)
 }
 
-fn tensordot_fixed_order<'a, 'b, A: LinalgScalar>(
-    lhs: &'b ArrayViewD<'a, A>,
-    rhs: &'b ArrayViewD<'a, A>,
-    last_n: usize,
-) -> ArrayD<A>
-where
-    'a: 'b,
-{
-    // Returns an n-dimensional array where n = |D| + |E| - 2 * last_n.
-    // The shape will be (...lhs.shape(:-last_n), ...rhs.shape(last_n:))
-    // i.e. if lhs.shape = (3,4,5), rhs.shape = (4,5,6), and last_n=2,
-    // the returned array will have shape (3,6).
-    //
-    // Basically you reshape each one into a 2-D matrix (no matter what
-    // the starting size was) and then do a matrix multiplication
-
-    let tensordotter = TensordotFixedPosition::from_shapes_and_number_of_contracted_axes(
-        &lhs.shape(),
-        &rhs.shape(),
-        last_n,
-    );
-    tensordotter.contract_pair(lhs, rhs)
-}
-
 pub fn tensordot<A, S, S2, D, E>(
     lhs: &ArrayBase<S, D>,
     rhs: &ArrayBase<S2, E>,
@@ -94,45 +70,12 @@ pub fn tensordot<A, S, S2, D, E>(
     rhs_axes: &[Axis],
 ) -> ArrayD<A>
 where
-    A: std::fmt::Debug + ndarray::LinalgScalar,
+    A: ndarray::LinalgScalar,
     S: Data<Elem = A>,
     S2: Data<Elem = A>,
     D: Dimension,
     E: Dimension,
 {
-    let num_axes = lhs_axes.len();
-    assert!(num_axes == rhs_axes.len());
-    let mut lhs_startpositions: Vec<_> = lhs_axes.iter().map(|x| x.index()).collect();
-    let mut rhs_startpositions: Vec<_> = rhs_axes.iter().map(|x| x.index()).collect();
-
-    // Probably a better way to do this...
-    let lhs_uniques: HashSet<_> = lhs_startpositions.iter().cloned().collect();
-    let rhs_uniques: HashSet<_> = rhs_startpositions.iter().cloned().collect();
-    assert!(num_axes == lhs_uniques.len());
-    assert!(num_axes == rhs_uniques.len());
-
-    // Rolls the axes specified in lhs and rhs to the back and front respectively,
-    // then calls tensordot_fixed_order(rolled_lhs, rolled_rhs, lhs_axes.len())
-    let mut permutation_lhs = Vec::new();
-    for i in 0..(lhs.ndim()) {
-        if !(lhs_uniques.contains(&i)) {
-            permutation_lhs.push(i);
-        }
-    }
-    permutation_lhs.append(&mut lhs_startpositions);
-    let rolled_lhs = lhs.view().into_dyn().permuted_axes(permutation_lhs);
-
-    let mut permutation_rhs = Vec::new();
-    permutation_rhs.append(&mut rhs_startpositions);
-    for i in 0..(rhs.ndim()) {
-        if !(rhs_uniques.contains(&i)) {
-            permutation_rhs.push(i);
-        }
-    }
-    let rolled_rhs = rhs.view().into_dyn().permuted_axes(permutation_rhs);
-
-    let correct_answer = tensordot_fixed_order(&rolled_lhs, &rolled_rhs, lhs_axes.len());
-    
     let lhs_axes_copy: Vec<_> = lhs_axes.iter().map(|x| x.index()).collect();
     let rhs_axes_copy: Vec<_> = rhs_axes.iter().map(|x| x.index()).collect();
     let tensordotter = TensordotGeneral::from_shapes_and_axis_numbers(
@@ -141,15 +84,10 @@ where
         &lhs_axes_copy,
         &rhs_axes_copy,
     );
-    let wrong_answer = tensordotter.contract_pair(&lhs.view().into_dyn(), &rhs.view().into_dyn());
-
-    println!("{:?}", &correct_answer);
-    println!("{:?}", &wrong_answer);
-
-    correct_answer
+    tensordotter.contract_pair(&lhs.view().into_dyn(), &rhs.view().into_dyn())
 }
 
-fn einsum_pair_allused_nostacks_classified_deduped_indices<A: std::fmt::Debug + LinalgScalar>(
+fn einsum_pair_allused_nostacks_classified_deduped_indices<A: LinalgScalar>(
     classified_pair_contraction: &ClassifiedDedupedPairContraction,
     lhs: &ArrayViewD<A>,
     rhs: &ArrayViewD<A>,
@@ -277,7 +215,7 @@ fn einsum_pair_allused_nostacks_classified_deduped_indices<A: std::fmt::Debug + 
     }
 }
 
-fn move_stack_indices_to_front<A: std::fmt::Debug + LinalgScalar>(
+fn move_stack_indices_to_front<A: LinalgScalar>(
     input_indices: &[IndexWithPairInfo],
     stack_index_order: &[char],
     tensor: &ArrayViewD<A>,
@@ -305,7 +243,7 @@ fn move_stack_indices_to_front<A: std::fmt::Debug + LinalgScalar>(
 }
 
 #[inline(never)]
-fn get_intermediate_result<A: std::fmt::Debug + LinalgScalar>(
+fn get_intermediate_result<A: LinalgScalar>(
     temp_shape: &[usize],
     lhs_reshaped: &ArrayD<A>,
     rhs_reshaped: &ArrayD<A>,
@@ -330,7 +268,7 @@ fn get_intermediate_result<A: std::fmt::Debug + LinalgScalar>(
     temp_result
 }
 
-fn einsum_pair_allused_deduped_indices<A: std::fmt::Debug + LinalgScalar>(
+fn einsum_pair_allused_deduped_indices<A: LinalgScalar>(
     sized_contraction: &SizedContraction,
     lhs: &ArrayViewD<A>,
     rhs: &ArrayViewD<A>,
@@ -501,7 +439,7 @@ fn einsum_pair_allused_deduped_indices<A: std::fmt::Debug + LinalgScalar>(
     }
 }
 
-fn einsum_pair<'a, A: std::fmt::Debug + LinalgScalar>(
+fn einsum_pair<'a, A: LinalgScalar>(
     sized_contraction: &SizedContraction,
     lhs: &'a ArrayViewD<'a, A>,
     rhs: &'a ArrayViewD<'a, A>,
@@ -610,7 +548,7 @@ fn einsum_pair<'a, A: std::fmt::Debug + LinalgScalar>(
 
 pub fn einsum_path<A>(path: &EinsumPath, operands: &[&ArrayLike<A>]) -> ArrayD<A>
 where
-    A: std::fmt::Debug + LinalgScalar,
+    A: LinalgScalar,
 {
     let EinsumPath {
         first_step:
@@ -643,7 +581,7 @@ where
     result
 }
 
-pub fn einsum_sc<A: std::fmt::Debug + LinalgScalar>(
+pub fn einsum_sc<A: LinalgScalar>(
     sized_contraction: &SizedContraction,
     operands: &[&ArrayLike<A>],
 ) -> ArrayD<A> {
@@ -651,7 +589,7 @@ pub fn einsum_sc<A: std::fmt::Debug + LinalgScalar>(
     einsum_path(&path, operands)
 }
 
-pub fn einsum<A: std::fmt::Debug + LinalgScalar>(
+pub fn einsum<A: LinalgScalar>(
     input_string: &str,
     operands: &[&dyn ArrayLike<A>],
 ) -> Result<ArrayD<A>, &'static str> {

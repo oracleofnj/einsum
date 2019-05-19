@@ -174,6 +174,10 @@ impl TensordotGeneral {
         lhs_axes: &[usize],
         rhs_axes: &[usize],
     ) -> Self {
+        println!("lhs_shape: {:?}", lhs_shape);
+        println!("rhs_shape: {:?}", rhs_shape);
+        println!("lhs_axes: {:?}", lhs_axes);
+        println!("rhs_axes: {:?}", rhs_axes);
         let num_contracted_axes = lhs_axes.len();
         assert!(num_contracted_axes == rhs_axes.len());
         let lhs_uniques: HashSet<_> = lhs_axes.iter().cloned().collect();
@@ -204,9 +208,10 @@ impl TensordotGeneral {
             permutation_rhs.push(axis);
             adjusted_rhs_shape.push(rhs_shape[axis]);
         }
-        for i in 0..(rhs_shape.len()) {
+        for (i, &axis_length) in rhs_shape.iter().enumerate() {
             if !(rhs_uniques.contains(&i)) {
                 permutation_rhs.push(i);
+                adjusted_rhs_shape.push(axis_length);
             }
         }
 
