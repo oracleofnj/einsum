@@ -10,7 +10,7 @@ use singleton_contractors::{
 };
 
 mod pair_contractors;
-pub use pair_contractors::{TensordotFixedPosition, TensordotGeneral};
+pub use pair_contractors::{HadamardProductGeneral, TensordotFixedPosition, TensordotGeneral};
 
 pub trait SingletonViewer<A> {
     fn view_singleton<'a, 'b>(&self, tensor: &'b ArrayViewD<'a, A>) -> ArrayViewD<'b, A>
@@ -27,22 +27,25 @@ pub trait SingletonContractor<A> {
 }
 
 pub trait PairContractor<A> {
-    fn contract_pair<'a, 'b>(
+    fn contract_pair<'a, 'b, 'c, 'd>(
         &self,
         lhs: &'b ArrayViewD<'a, A>,
-        rhs: &'b ArrayViewD<'a, A>,
+        rhs: &'d ArrayViewD<'c, A>,
     ) -> ArrayD<A>
     where
         'a: 'b,
+        'c: 'd,
         A: Clone + LinalgScalar;
 
-    fn contract_and_assign_pair<'a, 'b>(
+    fn contract_and_assign_pair<'a, 'b, 'c, 'd, 'e, 'f>(
         &self,
         lhs: &'b ArrayViewD<'a, A>,
-        rhs: &'b ArrayViewD<'a, A>,
-        out: &'b mut ArrayViewMutD<'a, A>,
+        rhs: &'d ArrayViewD<'c, A>,
+        out: &'f mut ArrayViewMutD<'e, A>,
     ) where
         'a: 'b,
+        'c: 'd,
+        'e: 'f,
         A: Clone + LinalgScalar,
     {
         let result = self.contract_pair(lhs, rhs);

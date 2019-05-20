@@ -5,6 +5,24 @@ use std::collections::{HashMap, HashSet};
 use super::{PairContractor, Permutation, SingletonContractor, SingletonViewer};
 use crate::{Contraction, SizedContraction};
 
+fn find_outputs_in_inputs_unique(output_indices: &[char], input_indices: &[char]) -> Vec<usize> {
+    output_indices
+        .iter()
+        .map(|&output_char| {
+            let input_pos = input_indices
+                .iter()
+                .position(|&input_char| input_char == output_char)
+                .unwrap();
+            assert!(input_indices
+                .iter()
+                .skip(input_pos + 1)
+                .position(|&input_char| input_char == output_char)
+                .is_none());
+            input_pos
+        })
+        .collect()
+}
+
 #[derive(Clone, Debug)]
 pub struct TensordotFixedPosition {
     len_contracted_lhs: usize,
@@ -78,13 +96,14 @@ impl TensordotFixedPosition {
 }
 
 impl<A> PairContractor<A> for TensordotFixedPosition {
-    fn contract_pair<'a, 'b>(
+    fn contract_pair<'a, 'b, 'c, 'd>(
         &self,
         lhs: &'b ArrayViewD<'a, A>,
-        rhs: &'b ArrayViewD<'a, A>,
+        rhs: &'d ArrayViewD<'c, A>,
     ) -> ArrayD<A>
     where
         'a: 'b,
+        'c: 'd,
         A: Clone + LinalgScalar,
     {
         let lhs_array;
@@ -138,32 +157,8 @@ impl TensordotGeneral {
 
         let lhs_shape: Vec<usize> = lhs_indices.iter().map(|c| sc.output_size[c]).collect();
         let rhs_shape: Vec<usize> = rhs_indices.iter().map(|c| sc.output_size[c]).collect();
-        let mut lhs_axes = Vec::new();
-        let mut rhs_axes = Vec::new();
-
-        for &output_char in output_indices.iter() {
-            let lhs_position = lhs_indices
-                .iter()
-                .position(|&input_char| input_char == output_char)
-                .unwrap();
-            assert!(lhs_indices
-                .iter()
-                .skip(lhs_position + 1)
-                .position(|&input_char| input_char == output_char)
-                .is_none());
-            lhs_axes.push(lhs_position);
-
-            let rhs_position = rhs_indices
-                .iter()
-                .position(|&input_char| input_char == output_char)
-                .unwrap();
-            assert!(rhs_indices
-                .iter()
-                .skip(rhs_position + 1)
-                .position(|&input_char| input_char == output_char)
-                .is_none());
-            rhs_axes.push(rhs_position);
-        }
+        let lhs_axes = find_outputs_in_inputs_unique(&output_indices, &lhs_indices);
+        let rhs_axes = find_outputs_in_inputs_unique(&output_indices, &rhs_indices);
 
         TensordotGeneral::from_shapes_and_axis_numbers(&lhs_shape, &rhs_shape, &lhs_axes, &rhs_axes)
     }
@@ -229,18 +224,92 @@ impl TensordotGeneral {
 }
 
 impl<A> PairContractor<A> for TensordotGeneral {
-    fn contract_pair<'a, 'b>(
+    fn contract_pair<'a, 'b, 'c, 'd>(
         &self,
         lhs: &'b ArrayViewD<'a, A>,
-        rhs: &'b ArrayViewD<'a, A>,
+        rhs: &'d ArrayViewD<'c, A>,
     ) -> ArrayD<A>
     where
         'a: 'b,
+        'c: 'd,
         A: Clone + LinalgScalar,
     {
         let permuted_lhs = self.lhs_permutation.view_singleton(lhs);
         let permuted_rhs = self.rhs_permutation.view_singleton(rhs);
         self.tensordot_fixed_position
             .contract_pair(&permuted_lhs, &permuted_rhs)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct HadamardProduct {}
+
+impl HadamardProduct {
+    pub fn new(sc: &SizedContraction) -> Self {
+        assert_eq!(sc.contraction.operand_indices.len(), 2);
+        let lhs_indices = &sc.contraction.operand_indices[0];
+        let rhs_indices = &sc.contraction.operand_indices[1];
+        let output_indices = &sc.contraction.output_indices;
+        assert_eq!(lhs_indices, rhs_indices);
+        assert_eq!(lhs_indices, output_indices);
+
+        HadamardProduct {}
+    }
+}
+
+impl<A> PairContractor<A> for HadamardProduct {
+    fn contract_pair<'a, 'b, 'c, 'd>(
+        &self,
+        lhs: &'b ArrayViewD<'a, A>,
+        rhs: &'d ArrayViewD<'c, A>,
+    ) -> ArrayD<A>
+    where
+        'a: 'b,
+        'c: 'd,
+        A: Clone + LinalgScalar,
+    {
+        lhs * rhs
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct HadamardProductGeneral {
+    lhs_permutation: Permutation,
+    rhs_permutation: Permutation,
+}
+
+impl HadamardProductGeneral {
+    pub fn new(sc: &SizedContraction) -> Self {
+        assert_eq!(sc.contraction.operand_indices.len(), 2);
+        let lhs_indices = &sc.contraction.operand_indices[0];
+        let rhs_indices = &sc.contraction.operand_indices[1];
+        let output_indices = &sc.contraction.output_indices;
+        assert_eq!(lhs_indices.len(), rhs_indices.len());
+        assert_eq!(lhs_indices.len(), output_indices.len());
+
+        let lhs_permutation =
+            Permutation::from_indices(&find_outputs_in_inputs_unique(output_indices, lhs_indices));
+        let rhs_permutation =
+            Permutation::from_indices(&find_outputs_in_inputs_unique(output_indices, rhs_indices));
+
+        HadamardProductGeneral {
+            lhs_permutation,
+            rhs_permutation,
+        }
+    }
+}
+
+impl<A> PairContractor<A> for HadamardProductGeneral {
+    fn contract_pair<'a, 'b, 'c, 'd>(
+        &self,
+        lhs: &'b ArrayViewD<'a, A>,
+        rhs: &'d ArrayViewD<'c, A>,
+    ) -> ArrayD<A>
+    where
+        'a: 'b,
+        'c: 'd,
+        A: Clone + LinalgScalar,
+    {
+        &self.lhs_permutation.view_singleton(lhs) * &self.rhs_permutation.view_singleton(rhs)
     }
 }

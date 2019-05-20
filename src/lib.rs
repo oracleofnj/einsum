@@ -34,7 +34,7 @@ pub use optimizers::{
 
 mod contractors;
 pub use contractors::{
-    PairContractor, SingletonContraction, SingletonContractor, TensordotFixedPosition,
+    HadamardProductGeneral, PairContractor, SingletonContraction, SingletonContractor,
     TensordotGeneral,
 };
 
@@ -55,9 +55,9 @@ where
     }
 }
 
-pub fn einsum_singleton<'a, A: LinalgScalar>(
+pub fn einsum_singleton<A: LinalgScalar>(
     sized_contraction: &SizedContraction,
-    tensor: &'a ArrayViewD<'a, A>,
+    tensor: &ArrayViewD<A>,
 ) -> ArrayD<A> {
     let csc = SingletonContraction::new(&sized_contraction);
     csc.contract_singleton(tensor)
@@ -282,167 +282,180 @@ fn einsum_pair_allused_deduped_indices<A: LinalgScalar>(
 
     let cpc = generate_classified_pair_contraction(sized_contraction);
 
-    if cpc.stack_indices.len() == 0 {
-        let result_shape: Vec<usize> = sized_contraction
-            .contraction
-            .output_indices
-            .iter()
-            .map(|c| sized_contraction.output_size[c])
-            .collect();
-        let mut result: ArrayD<A> = Array::zeros(IxDyn(&result_shape));
-        einsum_pair_allused_nostacks_classified_deduped_indices(
-            &cpc,
-            lhs,
-            rhs,
-            &mut result.view_mut(),
-        );
-        result
-    } else {
-        // What do we have to do?
-        // (1) Permute the stack indices to the front of LHS and RHS and
-        //     Reshape into (N, ...non-stacked LHS shape), (N, ...non-stacked RHS shape)
-        let mut stack_index_order = Vec::new();
-        for idx in cpc.output_indices.iter() {
-            if let PairIndexInfo::StackInfo(_) = idx.index_info {
-                stack_index_order.push(idx.index);
-            }
-        }
-        // OLD:
-        let lhs_reshaped = move_stack_indices_to_front(&cpc.lhs_indices, &stack_index_order, &lhs);
-        let rhs_reshaped = move_stack_indices_to_front(&cpc.rhs_indices, &stack_index_order, &rhs);
-
-        // NEW:
-        let mut lhs_stack_axes = Vec::new();
-        let mut rhs_stack_axes = Vec::new();
-        for &c in stack_index_order.iter() {
-            lhs_stack_axes.push(
-                cpc.lhs_indices
-                    .iter()
-                    .position(|idx| idx.index == c)
-                    .unwrap(),
+    match (
+        cpc.stack_indices.len(),
+        cpc.outer_indices.len(),
+        cpc.contracted_indices.len(),
+    ) {
+        (0, _, _) => {
+            let result_shape: Vec<usize> = sized_contraction
+                .contraction
+                .output_indices
+                .iter()
+                .map(|c| sized_contraction.output_size[c])
+                .collect();
+            let mut result: ArrayD<A> = Array::zeros(IxDyn(&result_shape));
+            einsum_pair_allused_nostacks_classified_deduped_indices(
+                &cpc,
+                lhs,
+                rhs,
+                &mut result.view_mut(),
             );
-            rhs_stack_axes.push(
-                cpc.rhs_indices
-                    .iter()
-                    .position(|idx| idx.index == c)
-                    .unwrap(),
-            );
+            result
         }
-        // let lhs_dyn_view = lhs.view().into_dyn();
-        // let rhs_dyn_view = rhs.view().into_dyn();
-        // let mut lhs_iter = MultiAxisIterator::new(&lhs_dyn_view, &lhs_stack_axes);
-        // let mut rhs_iter = MultiAxisIterator::new(&rhs_dyn_view, &rhs_stack_axes);
-
-        // (2) Construct the non-stacked ClassifiedDedupedPairContraction
-        let mut unstacked_lhs_chars = Vec::new();
-        let mut unstacked_rhs_chars = Vec::new();
-        let mut unstacked_output_chars = Vec::new();
-        let mut summation_chars = Vec::new();
-        let mut num_subviews = 1;
-        for idx in cpc.lhs_indices.iter() {
-            match idx.index_info {
-                PairIndexInfo::OuterInfo(_) => {
-                    unstacked_lhs_chars.push(idx.index);
-                }
-                PairIndexInfo::ContractedInfo(_) => {
-                    unstacked_lhs_chars.push(idx.index);
-                    summation_chars.push(idx.index);
-                }
-                PairIndexInfo::StackInfo(_) => {
-                    num_subviews *= sized_contraction.output_size[&idx.index];
+        (_, 0, 0) => {
+            let hadamarder = HadamardProductGeneral::new(&sized_contraction);
+            hadamarder.contract_pair(lhs, rhs)
+        }
+        (_, _, _) => {
+            // (1) Permute the stack indices to the front of LHS and RHS and
+            //     Reshape into (N, ...non-stacked LHS shape), (N, ...non-stacked RHS shape)
+            let mut stack_index_order = Vec::new();
+            for idx in cpc.output_indices.iter() {
+                if let PairIndexInfo::StackInfo(_) = idx.index_info {
+                    stack_index_order.push(idx.index);
                 }
             }
-        }
-        for idx in cpc.rhs_indices.iter() {
-            if let PairIndexInfo::StackInfo(_) = idx.index_info {
-            } else {
-                unstacked_rhs_chars.push(idx.index);
-            }
-        }
-        for idx in cpc.output_indices.iter() {
-            if let PairIndexInfo::StackInfo(_) = idx.index_info {
-            } else {
-                unstacked_output_chars.push(idx.index);
-            }
-        }
-        let new_sized_contraction = SizedContraction {
-            contraction: Contraction {
-                operand_indices: vec![unstacked_lhs_chars.clone(), unstacked_rhs_chars.clone()],
-                output_indices: unstacked_output_chars,
-                summation_indices: summation_chars,
-            },
-            output_size: HashMap::new(),
-        };
-        let new_cdpc = generate_classified_pair_contraction(&new_sized_contraction);
+            // OLD:
+            let lhs_reshaped =
+                move_stack_indices_to_front(&cpc.lhs_indices, &stack_index_order, &lhs);
+            let rhs_reshaped =
+                move_stack_indices_to_front(&cpc.rhs_indices, &stack_index_order, &rhs);
 
-        // (3) for i = 0..N, assign the result of einsum_pair_allused_nostacks_classified_deduped_indices
-        //     to unshaped_result[i]
-        let mut temp_shape: Vec<usize> = Vec::new();
-        temp_shape.push(num_subviews);
-        let mut final_shape: Vec<usize> = Vec::new();
-        let mut intermediate_indices: Vec<char> = Vec::new();
-        for (idx, c) in cpc
-            .output_indices
-            .iter()
-            .zip(sized_contraction.contraction.output_indices.iter())
-        {
-            if let PairIndexInfo::StackInfo(_) = idx.index_info {
-                final_shape.push(sized_contraction.output_size[c]);
-                intermediate_indices.push(*c);
+            // NEW:
+            let mut lhs_stack_axes = Vec::new();
+            let mut rhs_stack_axes = Vec::new();
+            for &c in stack_index_order.iter() {
+                lhs_stack_axes.push(
+                    cpc.lhs_indices
+                        .iter()
+                        .position(|idx| idx.index == c)
+                        .unwrap(),
+                );
+                rhs_stack_axes.push(
+                    cpc.rhs_indices
+                        .iter()
+                        .position(|idx| idx.index == c)
+                        .unwrap(),
+                );
             }
-        }
-        for (idx, c) in cpc
-            .output_indices
-            .iter()
-            .zip(sized_contraction.contraction.output_indices.iter())
-        {
-            if let PairIndexInfo::StackInfo(_) = idx.index_info {
-            } else {
-                temp_shape.push(sized_contraction.output_size[c]);
-                final_shape.push(sized_contraction.output_size[c]);
-                intermediate_indices.push(*c);
-            }
-        }
-        let temp_result =
-            get_intermediate_result(&temp_shape, &lhs_reshaped, &rhs_reshaped, &new_cdpc);
-        // for (mut output_subview, (lhs_subview, rhs_subview)) in temp_result
-        //     .outer_iter_mut()
-        //     .zip(lhs_reshaped.outer_iter().zip(rhs_reshaped.outer_iter()))
-        // {
-        //     // let lhs_subview = lhs_iter.next().unwrap();
-        //     // let rhs_subview = rhs_iter.next().unwrap();
-        //     let output = einsum_pair_allused_nostacks_classified_deduped_indices(
-        //         &new_cdpc,
-        //         &lhs_subview,
-        //         &rhs_subview,
-        //     );
-        //     output_subview.assign(&output);
-        // }
-        //
-        // (6) Permute into correct order
-        let mut permutation: Vec<usize> = Vec::new();
-        for &c in intermediate_indices.iter() {
-            permutation.push(
-                sized_contraction
-                    .contraction
-                    .output_indices
-                    .iter()
-                    .position(|&x| x == c)
-                    .unwrap(),
-            );
-        }
+            // let lhs_dyn_view = lhs.view().into_dyn();
+            // let rhs_dyn_view = rhs.view().into_dyn();
+            // let mut lhs_iter = MultiAxisIterator::new(&lhs_dyn_view, &lhs_stack_axes);
+            // let mut rhs_iter = MultiAxisIterator::new(&rhs_dyn_view, &rhs_stack_axes);
 
-        temp_result
-            .into_shape(IxDyn(&final_shape))
-            .unwrap()
-            .permuted_axes(permutation)
+            // (2) Construct the non-stacked ClassifiedDedupedPairContraction
+            let mut unstacked_lhs_chars = Vec::new();
+            let mut unstacked_rhs_chars = Vec::new();
+            let mut unstacked_output_chars = Vec::new();
+            let mut summation_chars = Vec::new();
+            let mut num_subviews = 1;
+            for idx in cpc.lhs_indices.iter() {
+                match idx.index_info {
+                    PairIndexInfo::OuterInfo(_) => {
+                        unstacked_lhs_chars.push(idx.index);
+                    }
+                    PairIndexInfo::ContractedInfo(_) => {
+                        unstacked_lhs_chars.push(idx.index);
+                        summation_chars.push(idx.index);
+                    }
+                    PairIndexInfo::StackInfo(_) => {
+                        num_subviews *= sized_contraction.output_size[&idx.index];
+                    }
+                }
+            }
+            for idx in cpc.rhs_indices.iter() {
+                if let PairIndexInfo::StackInfo(_) = idx.index_info {
+                } else {
+                    unstacked_rhs_chars.push(idx.index);
+                }
+            }
+            for idx in cpc.output_indices.iter() {
+                if let PairIndexInfo::StackInfo(_) = idx.index_info {
+                } else {
+                    unstacked_output_chars.push(idx.index);
+                }
+            }
+            let new_sized_contraction = SizedContraction {
+                contraction: Contraction {
+                    operand_indices: vec![unstacked_lhs_chars.clone(), unstacked_rhs_chars.clone()],
+                    output_indices: unstacked_output_chars,
+                    summation_indices: summation_chars,
+                },
+                output_size: HashMap::new(),
+            };
+            let new_cdpc = generate_classified_pair_contraction(&new_sized_contraction);
+
+            // (3) for i = 0..N, assign the result of einsum_pair_allused_nostacks_classified_deduped_indices
+            //     to unshaped_result[i]
+            let mut temp_shape: Vec<usize> = Vec::new();
+            temp_shape.push(num_subviews);
+            let mut final_shape: Vec<usize> = Vec::new();
+            let mut intermediate_indices: Vec<char> = Vec::new();
+            for (idx, c) in cpc
+                .output_indices
+                .iter()
+                .zip(sized_contraction.contraction.output_indices.iter())
+            {
+                if let PairIndexInfo::StackInfo(_) = idx.index_info {
+                    final_shape.push(sized_contraction.output_size[c]);
+                    intermediate_indices.push(*c);
+                }
+            }
+            for (idx, c) in cpc
+                .output_indices
+                .iter()
+                .zip(sized_contraction.contraction.output_indices.iter())
+            {
+                if let PairIndexInfo::StackInfo(_) = idx.index_info {
+                } else {
+                    temp_shape.push(sized_contraction.output_size[c]);
+                    final_shape.push(sized_contraction.output_size[c]);
+                    intermediate_indices.push(*c);
+                }
+            }
+            let temp_result =
+                get_intermediate_result(&temp_shape, &lhs_reshaped, &rhs_reshaped, &new_cdpc);
+            // for (mut output_subview, (lhs_subview, rhs_subview)) in temp_result
+            //     .outer_iter_mut()
+            //     .zip(lhs_reshaped.outer_iter().zip(rhs_reshaped.outer_iter()))
+            // {
+            //     // let lhs_subview = lhs_iter.next().unwrap();
+            //     // let rhs_subview = rhs_iter.next().unwrap();
+            //     let output = einsum_pair_allused_nostacks_classified_deduped_indices(
+            //         &new_cdpc,
+            //         &lhs_subview,
+            //         &rhs_subview,
+            //     );
+            //     output_subview.assign(&output);
+            // }
+            //
+            // (6) Permute into correct order
+            let mut permutation: Vec<usize> = Vec::new();
+            for &c in intermediate_indices.iter() {
+                permutation.push(
+                    sized_contraction
+                        .contraction
+                        .output_indices
+                        .iter()
+                        .position(|&x| x == c)
+                        .unwrap(),
+                );
+            }
+
+            temp_result
+                .into_shape(IxDyn(&final_shape))
+                .unwrap()
+                .permuted_axes(permutation)
+
+        }
     }
 }
 
-fn einsum_pair<'a, A: LinalgScalar>(
+fn einsum_pair<A: LinalgScalar>(
     sized_contraction: &SizedContraction,
-    lhs: &'a ArrayViewD<'a, A>,
-    rhs: &'a ArrayViewD<'a, A>,
+    lhs: &ArrayViewD<A>,
+    rhs: &ArrayViewD<A>,
 ) -> ArrayD<A> {
     // If we have abc,bcde -> ae [no d in output] or abbc,bce -> ae [repeated b in input],
     // collapse the offending tensor before delegating to einsum_pair_allused_deduped_indices
