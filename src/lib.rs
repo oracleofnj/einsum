@@ -34,8 +34,8 @@ pub use optimizers::{
 
 mod contractors;
 pub use contractors::{
-    HadamardProductGeneral, PairContractor, SingletonContraction, SingletonContractor,
-    TensordotGeneral,
+    HadamardProductGeneral, PairContractor, ScalarMatrixProductGeneral, SingletonContraction,
+    SingletonContractor, TensordotGeneral,
 };
 
 mod classifiers;
@@ -111,37 +111,30 @@ fn einsum_pair_allused_nostacks_classified_deduped_indices<A: LinalgScalar>(
         classified_pair_contraction.rhs_indices.len(),
     ) {
         (0, 0, 0) => {
-            let scalarize = IxDyn(&[]);
-            output[&scalarize] = lhs[&scalarize] * rhs[&scalarize];
+            panic!();
+            // let scalarize = IxDyn(&[]);
+            // output[&scalarize] = lhs[&scalarize] * rhs[&scalarize];
         }
         (0, 0, _) => {
-            let lhs_0d: A = lhs.first().unwrap().clone();
-            let mut both_outer_indices = Vec::new();
-            for idx in classified_pair_contraction.rhs_indices.iter() {
-                if let PairIndexInfo::OuterInfo(OuterIndex {
-                    input_position: OuterIndexPosition::RHS(_),
-                    output_position: _,
-                }) = idx.index_info
-                {
-                    both_outer_indices.push(idx.index);
-                }
-            }
-            let permutation: Vec<usize> = classified_pair_contraction
+            let rhs_indices = classified_pair_contraction
+                .rhs_indices
+                .iter()
+                .map(|x| x.index)
+                .collect::<Vec<_>>();
+            let output_indices = classified_pair_contraction
                 .output_indices
                 .iter()
-                .map(|c| {
-                    both_outer_indices
-                        .iter()
-                        .position(|&x| x == c.index)
-                        .unwrap()
-                })
-                .collect();
+                .map(|x| x.index)
+                .collect::<Vec<_>>();
+            let scalarmatrixer =
+                ScalarMatrixProductGeneral::from_indices(&rhs_indices, &output_indices);
 
-            output.assign(
-                &rhs.mapv(|x| x * lhs_0d)
-                    .into_dyn()
-                    .permuted_axes(permutation),
-            );
+            // output.assign(
+            //     &rhs.mapv(|x| x * lhs_0d)
+            //         .into_dyn()
+            //         .permuted_axes(permutation),
+            // );
+            scalarmatrixer.contract_and_assign_pair(lhs, rhs, output);
         }
         (0, _, 0) => {
             let rhs_0d: A = rhs.first().unwrap().clone();
@@ -447,7 +440,6 @@ fn einsum_pair_allused_deduped_indices<A: LinalgScalar>(
                 .into_shape(IxDyn(&final_shape))
                 .unwrap()
                 .permuted_axes(permutation)
-
         }
     }
 }

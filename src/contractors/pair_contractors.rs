@@ -255,6 +255,10 @@ impl HadamardProduct {
 
         HadamardProduct {}
     }
+
+    fn from_nothing() -> Self {
+        HadamardProduct {}
+    }
 }
 
 impl<A> PairContractor<A> for HadamardProduct {
@@ -276,6 +280,7 @@ impl<A> PairContractor<A> for HadamardProduct {
 pub struct HadamardProductGeneral {
     lhs_permutation: Permutation,
     rhs_permutation: Permutation,
+    hadamard_product: HadamardProduct,
 }
 
 impl HadamardProductGeneral {
@@ -291,10 +296,12 @@ impl HadamardProductGeneral {
             Permutation::from_indices(&find_outputs_in_inputs_unique(output_indices, lhs_indices));
         let rhs_permutation =
             Permutation::from_indices(&find_outputs_in_inputs_unique(output_indices, rhs_indices));
+        let hadamard_product = HadamardProduct::from_nothing();
 
         HadamardProductGeneral {
             lhs_permutation,
             rhs_permutation,
+            hadamard_product,
         }
     }
 }
@@ -310,6 +317,177 @@ impl<A> PairContractor<A> for HadamardProductGeneral {
         'c: 'd,
         A: Clone + LinalgScalar,
     {
-        &self.lhs_permutation.view_singleton(lhs) * &self.rhs_permutation.view_singleton(rhs)
+        self.hadamard_product.contract_pair(
+            &self.lhs_permutation.view_singleton(lhs),
+            &self.rhs_permutation.view_singleton(rhs),
+        )
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ScalarMatrixProduct {}
+
+impl ScalarMatrixProduct {
+    pub fn new(sc: &SizedContraction) -> Self {
+        assert_eq!(sc.contraction.operand_indices.len(), 2);
+        let lhs_indices = &sc.contraction.operand_indices[0];
+        let rhs_indices = &sc.contraction.operand_indices[1];
+        let output_indices = &sc.contraction.output_indices;
+        assert_eq!(lhs_indices.len(), 0);
+        assert_eq!(output_indices, rhs_indices);
+
+        ScalarMatrixProduct {}
+    }
+
+    pub fn from_nothing() -> Self {
+        ScalarMatrixProduct {}
+    }
+}
+
+impl<A> PairContractor<A> for ScalarMatrixProduct {
+    fn contract_pair<'a, 'b, 'c, 'd>(
+        &self,
+        lhs: &'b ArrayViewD<'a, A>,
+        rhs: &'d ArrayViewD<'c, A>,
+    ) -> ArrayD<A>
+    where
+        'a: 'b,
+        'c: 'd,
+        A: Clone + LinalgScalar,
+    {
+        let lhs_0d: A = lhs.first().unwrap().clone();
+        rhs.mapv(|x| x * lhs_0d)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ScalarMatrixProductGeneral {
+    rhs_permutation: Permutation,
+    scalar_matrix_product: ScalarMatrixProduct,
+}
+
+impl ScalarMatrixProductGeneral {
+    pub fn new(sc: &SizedContraction) -> Self {
+        assert_eq!(sc.contraction.operand_indices.len(), 2);
+        let lhs_indices = &sc.contraction.operand_indices[0];
+        let rhs_indices = &sc.contraction.operand_indices[1];
+        let output_indices = &sc.contraction.output_indices;
+        assert_eq!(lhs_indices.len(), 0);
+        assert_eq!(rhs_indices.len(), output_indices.len());
+
+        ScalarMatrixProductGeneral::from_indices(rhs_indices, output_indices)
+    }
+
+    pub fn from_indices(input_indices: &[char], output_indices: &[char]) -> Self {
+        let rhs_permutation = Permutation::from_indices(&find_outputs_in_inputs_unique(
+            output_indices,
+            input_indices,
+        ));
+        let scalar_matrix_product = ScalarMatrixProduct::from_nothing();
+
+        ScalarMatrixProductGeneral {
+            rhs_permutation,
+            scalar_matrix_product,
+        }
+    }
+}
+
+impl<A> PairContractor<A> for ScalarMatrixProductGeneral {
+    fn contract_pair<'a, 'b, 'c, 'd>(
+        &self,
+        lhs: &'b ArrayViewD<'a, A>,
+        rhs: &'d ArrayViewD<'c, A>,
+    ) -> ArrayD<A>
+    where
+        'a: 'b,
+        'c: 'd,
+        A: Clone + LinalgScalar,
+    {
+        self.scalar_matrix_product
+            .contract_pair(lhs, &self.rhs_permutation.view_singleton(rhs))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct MatrixScalarProduct {}
+
+impl MatrixScalarProduct {
+    pub fn new(sc: &SizedContraction) -> Self {
+        assert_eq!(sc.contraction.operand_indices.len(), 2);
+        let lhs_indices = &sc.contraction.operand_indices[0];
+        let rhs_indices = &sc.contraction.operand_indices[1];
+        let output_indices = &sc.contraction.output_indices;
+        assert_eq!(rhs_indices.len(), 0);
+        assert_eq!(output_indices, lhs_indices);
+
+        MatrixScalarProduct {}
+    }
+
+    pub fn from_nothing() -> Self {
+        MatrixScalarProduct {}
+    }
+}
+
+impl<A> PairContractor<A> for MatrixScalarProduct {
+    fn contract_pair<'a, 'b, 'c, 'd>(
+        &self,
+        lhs: &'b ArrayViewD<'a, A>,
+        rhs: &'d ArrayViewD<'c, A>,
+    ) -> ArrayD<A>
+    where
+        'a: 'b,
+        'c: 'd,
+        A: Clone + LinalgScalar,
+    {
+        let rhs_0d: A = rhs.first().unwrap().clone();
+        lhs.mapv(|x| x * rhs_0d)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct MatrixScalarProductGeneral {
+    lhs_permutation: Permutation,
+    matrix_scalar_product: MatrixScalarProduct,
+}
+
+impl MatrixScalarProductGeneral {
+    pub fn new(sc: &SizedContraction) -> Self {
+        assert_eq!(sc.contraction.operand_indices.len(), 2);
+        let lhs_indices = &sc.contraction.operand_indices[0];
+        let rhs_indices = &sc.contraction.operand_indices[1];
+        let output_indices = &sc.contraction.output_indices;
+        assert_eq!(rhs_indices.len(), 0);
+        assert_eq!(lhs_indices.len(), output_indices.len());
+
+        MatrixScalarProductGeneral::from_indices(lhs_indices, output_indices)
+    }
+
+    pub fn from_indices(input_indices: &[char], output_indices: &[char]) -> Self {
+        let lhs_permutation = Permutation::from_indices(&find_outputs_in_inputs_unique(
+            output_indices,
+            input_indices,
+        ));
+        let matrix_scalar_product = MatrixScalarProduct::from_nothing();
+
+        MatrixScalarProductGeneral {
+            lhs_permutation,
+            matrix_scalar_product,
+        }
+    }
+}
+
+impl<A> PairContractor<A> for MatrixScalarProductGeneral {
+    fn contract_pair<'a, 'b, 'c, 'd>(
+        &self,
+        lhs: &'b ArrayViewD<'a, A>,
+        rhs: &'d ArrayViewD<'c, A>,
+    ) -> ArrayD<A>
+    where
+        'a: 'b,
+        'c: 'd,
+        A: Clone + LinalgScalar,
+    {
+        self.matrix_scalar_product
+            .contract_pair(&self.lhs_permutation.view_singleton(lhs), rhs)
     }
 }

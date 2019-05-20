@@ -10,7 +10,7 @@ use singleton_contractors::{
 };
 
 mod pair_contractors;
-pub use pair_contractors::{HadamardProductGeneral, TensordotFixedPosition, TensordotGeneral};
+pub use pair_contractors::{HadamardProductGeneral, TensordotFixedPosition, TensordotGeneral, ScalarMatrixProductGeneral};
 
 pub trait SingletonViewer<A> {
     fn view_singleton<'a, 'b>(&self, tensor: &'b ArrayViewD<'a, A>) -> ArrayViewD<'b, A>
