@@ -34,8 +34,8 @@ pub use optimizers::{
 
 mod contractors;
 pub use contractors::{
-    HadamardProductGeneral, PairContractor, ScalarMatrixProductGeneral, SingletonContraction,
-    SingletonContractor, TensordotGeneral,
+    HadamardProductGeneral, MatrixScalarProductGeneral, PairContractor, ScalarMatrixProductGeneral,
+    SingletonContraction, SingletonContractor, TensordotGeneral,
 };
 
 mod classifiers;
@@ -129,41 +129,23 @@ fn einsum_pair_allused_nostacks_classified_deduped_indices<A: LinalgScalar>(
             let scalarmatrixer =
                 ScalarMatrixProductGeneral::from_indices(&rhs_indices, &output_indices);
 
-            // output.assign(
-            //     &rhs.mapv(|x| x * lhs_0d)
-            //         .into_dyn()
-            //         .permuted_axes(permutation),
-            // );
             scalarmatrixer.contract_and_assign_pair(lhs, rhs, output);
         }
         (0, _, 0) => {
-            let rhs_0d: A = rhs.first().unwrap().clone();
-            let mut both_outer_indices = Vec::new();
-            for idx in classified_pair_contraction.lhs_indices.iter() {
-                if let PairIndexInfo::OuterInfo(OuterIndex {
-                    input_position: OuterIndexPosition::LHS(_),
-                    output_position: _,
-                }) = idx.index_info
-                {
-                    both_outer_indices.push(idx.index);
-                }
-            }
-            let permutation: Vec<usize> = classified_pair_contraction
+            let lhs_indices = classified_pair_contraction
+                .lhs_indices
+                .iter()
+                .map(|x| x.index)
+                .collect::<Vec<_>>();
+            let output_indices = classified_pair_contraction
                 .output_indices
                 .iter()
-                .map(|c| {
-                    both_outer_indices
-                        .iter()
-                        .position(|&x| x == c.index)
-                        .unwrap()
-                })
-                .collect();
+                .map(|x| x.index)
+                .collect::<Vec<_>>();
+            let matrixscalarer =
+                MatrixScalarProductGeneral::from_indices(&lhs_indices, &output_indices);
 
-            output.assign(
-                &lhs.mapv(|x| x * rhs_0d)
-                    .into_dyn()
-                    .permuted_axes(permutation),
-            );
+            matrixscalarer.contract_and_assign_pair(lhs, rhs, output);
         }
         _ => {
             let mut lhs_axes = Vec::new();
