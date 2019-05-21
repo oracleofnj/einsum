@@ -33,7 +33,7 @@ pub struct TensordotFixedPosition {
 }
 
 impl TensordotFixedPosition {
-    pub fn new(sc: &SizedContraction) -> Self {
+    fn new(sc: &SizedContraction) -> Self {
         assert_eq!(sc.contraction.operand_indices.len(), 2);
         let lhs_indices = &sc.contraction.operand_indices[0];
         let rhs_indices = &sc.contraction.operand_indices[1];
@@ -141,11 +141,14 @@ impl<A> PairContractor<A> for TensordotFixedPosition {
     }
 }
 
+// Micro-optimization possible: Have a version without the final permutation,
+// which clones the array
 #[derive(Clone, Debug)]
 pub struct TensordotGeneral {
     lhs_permutation: Permutation,
     rhs_permutation: Permutation,
     tensordot_fixed_position: TensordotFixedPosition,
+    output_permutation: Permutation,
 }
 
 impl TensordotGeneral {
@@ -153,14 +156,61 @@ impl TensordotGeneral {
         assert_eq!(sc.contraction.operand_indices.len(), 2);
         let lhs_indices = &sc.contraction.operand_indices[0];
         let rhs_indices = &sc.contraction.operand_indices[1];
+        let contracted_indices = &sc.contraction.summation_indices;
         let output_indices = &sc.contraction.output_indices;
-
         let lhs_shape: Vec<usize> = lhs_indices.iter().map(|c| sc.output_size[c]).collect();
         let rhs_shape: Vec<usize> = rhs_indices.iter().map(|c| sc.output_size[c]).collect();
-        let lhs_axes = find_outputs_in_inputs_unique(&output_indices, &lhs_indices);
-        let rhs_axes = find_outputs_in_inputs_unique(&output_indices, &rhs_indices);
 
-        TensordotGeneral::from_shapes_and_axis_numbers(&lhs_shape, &rhs_shape, &lhs_axes, &rhs_axes)
+        TensordotGeneral::from_shapes_and_indices(
+            &lhs_shape,
+            &rhs_shape,
+            lhs_indices,
+            &rhs_indices,
+            &contracted_indices,
+            &output_indices,
+        )
+    }
+
+    pub fn from_shapes_and_indices(
+        lhs_shape: &[usize],
+        rhs_shape: &[usize],
+        lhs_indices: &[char],
+        rhs_indices: &[char],
+        contracted_indices: &[char],
+        output_indices: &[char],
+    ) -> Self {
+        let lhs_contracted_axes = find_outputs_in_inputs_unique(&contracted_indices, &lhs_indices);
+        let rhs_contracted_axes = find_outputs_in_inputs_unique(&contracted_indices, &rhs_indices);
+        let mut uncontracted_chars: Vec<char> = lhs_indices
+            .iter()
+            .filter(|&&input_char| {
+                output_indices
+                    .iter()
+                    .position(|&output_char| input_char == output_char)
+                    .is_some()
+            })
+            .cloned()
+            .collect();
+        let mut rhs_uncontracted_chars: Vec<char> = rhs_indices
+            .iter()
+            .filter(|&&input_char| {
+                output_indices
+                    .iter()
+                    .position(|&output_char| input_char == output_char)
+                    .is_some()
+            })
+            .cloned()
+            .collect();
+        uncontracted_chars.append(&mut rhs_uncontracted_chars);
+        let output_order = find_outputs_in_inputs_unique(&output_indices, &uncontracted_chars);
+
+        TensordotGeneral::from_shapes_and_axis_numbers(
+            &lhs_shape,
+            &rhs_shape,
+            &lhs_contracted_axes,
+            &rhs_contracted_axes,
+            &output_order,
+        )
     }
 
     pub fn from_shapes_and_axis_numbers(
@@ -168,6 +218,7 @@ impl TensordotGeneral {
         rhs_shape: &[usize],
         lhs_axes: &[usize],
         rhs_axes: &[usize],
+        output_order: &[usize],
     ) -> Self {
         let num_contracted_axes = lhs_axes.len();
         assert!(num_contracted_axes == rhs_axes.len());
@@ -215,10 +266,13 @@ impl TensordotGeneral {
                 num_contracted_axes,
             );
 
+        let output_permutation = Permutation::from_indices(&output_order);
+
         TensordotGeneral {
             lhs_permutation,
             rhs_permutation,
             tensordot_fixed_position,
+            output_permutation,
         }
     }
 }
@@ -236,8 +290,11 @@ impl<A> PairContractor<A> for TensordotGeneral {
     {
         let permuted_lhs = self.lhs_permutation.view_singleton(lhs);
         let permuted_rhs = self.rhs_permutation.view_singleton(rhs);
-        self.tensordot_fixed_position
-            .contract_pair(&permuted_lhs, &permuted_rhs)
+        let tensordotted = self
+            .tensordot_fixed_position
+            .contract_pair(&permuted_lhs, &permuted_rhs);
+        self.output_permutation
+            .contract_singleton(&tensordotted.view())
     }
 }
 
@@ -245,7 +302,7 @@ impl<A> PairContractor<A> for TensordotGeneral {
 pub struct HadamardProduct {}
 
 impl HadamardProduct {
-    pub fn new(sc: &SizedContraction) -> Self {
+    fn new(sc: &SizedContraction) -> Self {
         assert_eq!(sc.contraction.operand_indices.len(), 2);
         let lhs_indices = &sc.contraction.operand_indices[0];
         let rhs_indices = &sc.contraction.operand_indices[1];
@@ -328,7 +385,7 @@ impl<A> PairContractor<A> for HadamardProductGeneral {
 pub struct ScalarMatrixProduct {}
 
 impl ScalarMatrixProduct {
-    pub fn new(sc: &SizedContraction) -> Self {
+    fn new(sc: &SizedContraction) -> Self {
         assert_eq!(sc.contraction.operand_indices.len(), 2);
         let lhs_indices = &sc.contraction.operand_indices[0];
         let rhs_indices = &sc.contraction.operand_indices[1];
@@ -412,7 +469,7 @@ impl<A> PairContractor<A> for ScalarMatrixProductGeneral {
 pub struct MatrixScalarProduct {}
 
 impl MatrixScalarProduct {
-    pub fn new(sc: &SizedContraction) -> Self {
+    fn new(sc: &SizedContraction) -> Self {
         assert_eq!(sc.contraction.operand_indices.len(), 2);
         let lhs_indices = &sc.contraction.operand_indices[0];
         let rhs_indices = &sc.contraction.operand_indices[1];
