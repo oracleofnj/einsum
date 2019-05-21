@@ -107,3 +107,35 @@ fn bench_sum_huge(b: &mut Bencher) {
 
     b.iter(|| einsum("ij->", &[&m1]));
 }
+
+#[bench]
+fn bench_outer_product_medium(b: &mut Bencher) {
+    let m1 = rand_array((300,));
+    let m2 = rand_array((400,));
+
+    b.iter(|| einsum("i,j->ij", &[&m1, &m2]));
+}
+
+#[bench]
+fn bench_stacked_outer_product_medium(b: &mut Bencher) {
+    let m1 = rand_array((100, 30));
+    let m2 = rand_array((100, 40));
+
+    b.iter(|| einsum("ij,ik->ijk", &[&m1, &m2]));
+}
+
+#[bench]
+fn bench_double_outer_product_medium(b: &mut Bencher) {
+    let m1 = rand_array((30, 10));
+    let m2 = rand_array((40, 10));
+
+    b.iter(|| einsum("ij,kl->lkij", &[&m1, &m2]));
+}
+
+#[bench]
+fn bench_stacked_double_outer_product_large(b: &mut Bencher) {
+    let m1 = rand_array((50, 30, 10));
+    let m2 = rand_array((50, 40, 10));
+
+    b.iter(|| einsum("ijk,ilm->ijklm", &[&m1, &m2]));
+}

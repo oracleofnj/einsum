@@ -5,24 +5,6 @@ use std::collections::{HashMap, HashSet};
 use super::{PairContractor, Permutation, SingletonContractor, SingletonViewer};
 use crate::{Contraction, SizedContraction};
 
-fn find_outputs_in_inputs_unique(output_indices: &[char], input_indices: &[char]) -> Vec<usize> {
-    output_indices
-        .iter()
-        .map(|&output_char| {
-            let input_pos = input_indices
-                .iter()
-                .position(|&input_char| input_char == output_char)
-                .unwrap();
-            assert!(input_indices
-                .iter()
-                .skip(input_pos + 1)
-                .position(|&input_char| input_char == output_char)
-                .is_none());
-            input_pos
-        })
-        .collect()
-}
-
 fn maybe_find_outputs_in_inputs_unique(
     output_indices: &[char],
     input_indices: &[char],
@@ -42,6 +24,13 @@ fn maybe_find_outputs_in_inputs_unique(
             }
             input_pos
         })
+        .collect()
+}
+
+fn find_outputs_in_inputs_unique(output_indices: &[char], input_indices: &[char]) -> Vec<usize> {
+    maybe_find_outputs_in_inputs_unique(output_indices, input_indices)
+        .iter()
+        .map(|x| x.unwrap())
         .collect()
 }
 
@@ -163,7 +152,7 @@ impl<A> PairContractor<A> for TensordotFixedPosition {
     }
 }
 
-// Micro-optimization possible: Have a version without the final permutation,
+// TODO: Micro-optimization possible: Have a version without the final permutation,
 // which clones the array
 #[derive(Clone, Debug)]
 pub struct TensordotGeneral {
@@ -193,7 +182,7 @@ impl TensordotGeneral {
         )
     }
 
-    pub fn from_shapes_and_indices(
+    fn from_shapes_and_indices(
         lhs_shape: &[usize],
         rhs_shape: &[usize],
         lhs_indices: &[char],
@@ -652,5 +641,101 @@ impl<A> PairContractor<A> for BroadcastProductGeneral {
         let broadcast_rhs = adjusted_rhs.broadcast(self.output_shape.clone()).unwrap();
         self.hadamard_product
             .contract_pair(&broadcast_lhs, &broadcast_rhs)
+    }
+}
+
+// TODO: Micro-optimization: Have a version without the output permutation,
+// which clones the array
+#[derive(Clone, Debug)]
+pub struct StackedTensordotGeneral {
+    lhs_permutation: Permutation,
+    rhs_permutation: Permutation,
+    lhs_output_shape: Vec<usize>,
+    rhs_output_shape: Vec<usize>,
+    intermediate_shape: Vec<usize>,
+    tensordot_fixed_position: TensordotFixedPosition,
+    output_shape: Vec<usize>,
+    output_permutation: Permutation,
+}
+
+impl StackedTensordotGeneral {
+    pub fn new(sc: &SizedContraction) -> Self {
+        let mut lhs_order = Vec::new();
+        let mut rhs_order = Vec::new();
+        let mut lhs_output_shape = Vec::new();
+        let mut rhs_output_shape = Vec::new();
+        let mut output_order = Vec::new();
+        let mut lhs_shape = Vec::new();
+        let mut rhs_shape = Vec::new();
+        let mut intermediate_shape = Vec::new();
+        let mut output_shape = Vec::new();
+        let num_contracted_axes = 1;
+
+        let tensordot_fixed_position =
+            TensordotFixedPosition::from_shapes_and_number_of_contracted_axes(
+                &lhs_shape,
+                &rhs_shape,
+                num_contracted_axes,
+            );
+        let lhs_permutation = Permutation::from_indices(&lhs_order);
+        let rhs_permutation = Permutation::from_indices(&rhs_order);
+        let output_permutation = Permutation::from_indices(&output_order);
+        StackedTensordotGeneral {
+            lhs_permutation,
+            rhs_permutation,
+            lhs_output_shape,
+            rhs_output_shape,
+            intermediate_shape,
+            tensordot_fixed_position,
+            output_shape,
+            output_permutation,
+        }
+    }
+}
+
+impl<A> PairContractor<A> for StackedTensordotGeneral {
+    fn contract_pair<'a, 'b, 'c, 'd>(
+        &self,
+        lhs: &'b ArrayViewD<'a, A>,
+        rhs: &'d ArrayViewD<'c, A>,
+    ) -> ArrayD<A>
+    where
+        'a: 'b,
+        'c: 'd,
+        A: Clone + LinalgScalar,
+    {
+        // What order do we want the indices in?
+        //
+        // LHS: Stack indices, outer indices, contracted indices
+        // RHS: Stack indices, contracted indices, outer indices
+        //
+        // TODO (right away): fix this, needs to clone so it's standard layout
+        let lhs_reshaped = self
+            .lhs_permutation
+            .view_singleton(lhs)
+            .into_shape(IxDyn(&self.lhs_output_shape))
+            .unwrap();
+        let rhs_reshaped = self
+            .rhs_permutation
+            .view_singleton(rhs)
+            .into_shape(IxDyn(&self.rhs_output_shape))
+            .unwrap();
+        let mut intermediate_result: ArrayD<A> = Array::zeros(IxDyn(&self.intermediate_shape));
+        let mut lhs_iter = lhs_reshaped.outer_iter();
+        let mut rhs_iter = rhs_reshaped.outer_iter();
+        for mut output_subview in intermediate_result.outer_iter_mut() {
+            let lhs_subview = lhs_iter.next().unwrap();
+            let rhs_subview = rhs_iter.next().unwrap();
+            self.tensordot_fixed_position.contract_and_assign_pair(
+                &lhs_subview,
+                &rhs_subview,
+                &mut output_subview,
+            );
+        }
+        let intermediate_reshaped = intermediate_result
+            .into_shape(IxDyn(&self.output_shape))
+            .unwrap();
+        self.output_permutation
+            .contract_singleton(&intermediate_reshaped.view())
     }
 }

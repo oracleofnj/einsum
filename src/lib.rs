@@ -166,14 +166,18 @@ fn einsum_pair_allused_deduped_indices<A: LinalgScalar>(
             let tensordotter = TensordotGeneral::new(&sized_contraction);
             tensordotter.contract_pair(lhs, rhs)
         }
-        (_, _, 0, _, _, false, _) => {
+        (_, _, 0, _, _, _, _) => {
             let contractor = BroadcastProductGeneral::new(&sized_contraction);
             contractor.contract_pair(lhs, rhs)
         }
-        (_, _, 0, _, _, _, false) => {
-            let contractor = BroadcastProductGeneral::new(&sized_contraction);
-            contractor.contract_pair(lhs, rhs)
-        }
+        // (_, _, 0, _, _, false, _) => {
+        //     let contractor = BroadcastProductGeneral::new(&sized_contraction);
+        //     contractor.contract_pair(lhs, rhs)
+        // }
+        // (_, _, 0, _, _, _, false) => {
+        //     let contractor = BroadcastProductGeneral::new(&sized_contraction);
+        //     contractor.contract_pair(lhs, rhs)
+        // }
         (_, _, _, _, _, _, _) => {
             // (1) Permute the stack indices to the front of LHS and RHS and
             //     Reshape into (N, ...non-stacked LHS shape), (N, ...non-stacked RHS shape)
