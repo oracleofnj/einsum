@@ -23,6 +23,28 @@ fn find_outputs_in_inputs_unique(output_indices: &[char], input_indices: &[char]
         .collect()
 }
 
+fn maybe_find_outputs_in_inputs_unique(
+    output_indices: &[char],
+    input_indices: &[char],
+) -> Vec<Option<usize>> {
+    output_indices
+        .iter()
+        .map(|&output_char| {
+            let input_pos = input_indices
+                .iter()
+                .position(|&input_char| input_char == output_char);
+            if input_pos.is_some() {
+                assert!(input_indices
+                    .iter()
+                    .skip(input_pos.unwrap() + 1)
+                    .position(|&input_char| input_char == output_char)
+                    .is_none());
+            }
+            input_pos
+        })
+        .collect()
+}
+
 #[derive(Clone, Debug)]
 pub struct TensordotFixedPosition {
     len_contracted_lhs: usize,
@@ -546,5 +568,89 @@ impl<A> PairContractor<A> for MatrixScalarProductGeneral {
     {
         self.matrix_scalar_product
             .contract_pair(&self.lhs_permutation.view_singleton(lhs), rhs)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct BroadcastProductGeneral {
+    lhs_permutation: Permutation,
+    rhs_permutation: Permutation,
+    lhs_insertions: Vec<usize>,
+    rhs_insertions: Vec<usize>,
+    output_shape: IxDyn,
+    hadamard_product: HadamardProduct,
+}
+
+impl BroadcastProductGeneral {
+    pub fn new(sc: &SizedContraction) -> Self {
+        assert_eq!(sc.contraction.operand_indices.len(), 2);
+        let lhs_indices = &sc.contraction.operand_indices[0];
+        let rhs_indices = &sc.contraction.operand_indices[1];
+        let output_indices = &sc.contraction.output_indices;
+
+        let maybe_lhs_indices = maybe_find_outputs_in_inputs_unique(&output_indices, &lhs_indices);
+        let maybe_rhs_indices = maybe_find_outputs_in_inputs_unique(&output_indices, &rhs_indices);
+        let lhs_indices: Vec<usize> = maybe_lhs_indices
+            .iter()
+            .filter(|x| x.is_some())
+            .map(|x| x.unwrap())
+            .collect();
+        let rhs_indices: Vec<usize> = maybe_rhs_indices
+            .iter()
+            .filter(|x| x.is_some())
+            .map(|x| x.unwrap())
+            .collect();
+        let lhs_insertions: Vec<usize> = maybe_lhs_indices
+            .iter()
+            .enumerate()
+            .filter(|(_, x)| x.is_none())
+            .map(|(i, _)| i)
+            .collect();
+        let rhs_insertions: Vec<usize> = maybe_rhs_indices
+            .iter()
+            .enumerate()
+            .filter(|(_, x)| x.is_none())
+            .map(|(i, _)| i)
+            .collect();
+        let lhs_permutation = Permutation::from_indices(&lhs_indices);
+        let rhs_permutation = Permutation::from_indices(&rhs_indices);
+        let output_sizes: Vec<usize> = output_indices.iter().map(|c| sc.output_size[c]).collect();
+        let output_shape = IxDyn(&output_sizes);
+        let hadamard_product = HadamardProduct::from_nothing();
+
+        BroadcastProductGeneral {
+            lhs_permutation,
+            rhs_permutation,
+            lhs_insertions,
+            rhs_insertions,
+            output_shape,
+            hadamard_product,
+        }
+    }
+}
+
+impl<A> PairContractor<A> for BroadcastProductGeneral {
+    fn contract_pair<'a, 'b, 'c, 'd>(
+        &self,
+        lhs: &'b ArrayViewD<'a, A>,
+        rhs: &'d ArrayViewD<'c, A>,
+    ) -> ArrayD<A>
+    where
+        'a: 'b,
+        'c: 'd,
+        A: Clone + LinalgScalar,
+    {
+        let mut adjusted_lhs = self.lhs_permutation.view_singleton(lhs);
+        let mut adjusted_rhs = self.rhs_permutation.view_singleton(rhs);
+        for &i in self.lhs_insertions.iter() {
+            adjusted_lhs = adjusted_lhs.insert_axis(Axis(i));
+        }
+        for &i in self.rhs_insertions.iter() {
+            adjusted_rhs = adjusted_rhs.insert_axis(Axis(i));
+        }
+        let broadcast_lhs = adjusted_lhs.broadcast(self.output_shape.clone()).unwrap();
+        let broadcast_rhs = adjusted_rhs.broadcast(self.output_shape.clone()).unwrap();
+        self.hadamard_product
+            .contract_pair(&broadcast_lhs, &broadcast_rhs)
     }
 }

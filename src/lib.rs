@@ -34,8 +34,8 @@ pub use optimizers::{
 
 mod contractors;
 pub use contractors::{
-    HadamardProductGeneral, MatrixScalarProductGeneral, PairContractor, ScalarMatrixProductGeneral,
-    SingletonContraction, SingletonContractor, TensordotGeneral,
+    BroadcastProductGeneral, HadamardProductGeneral, MatrixScalarProductGeneral, PairContractor,
+    ScalarMatrixProductGeneral, SingletonContraction, SingletonContractor, TensordotGeneral,
 };
 
 mod classifiers;
@@ -117,9 +117,12 @@ fn get_pair_contractor<A>(sized_contraction: &SizedContraction) -> Box<dyn PairC
         cpc.lhs_indices.len(),
         cpc.rhs_indices.len(),
     ) {
-        (0, 0, _, _) => Box::new(HadamardProductGeneral::new(&sized_contraction)),
-        (_, 0, 0, _) => Box::new(ScalarMatrixProductGeneral::new(&sized_contraction)),
-        (_, 0, _, 0) => Box::new(MatrixScalarProductGeneral::new(&sized_contraction)),
+        // (0, 0, _, _) => Box::new(HadamardProductGeneral::new(&sized_contraction)),
+        // (_, 0, 0, _) => Box::new(ScalarMatrixProductGeneral::new(&sized_contraction)),
+        // (_, 0, _, 0) => Box::new(MatrixScalarProductGeneral::new(&sized_contraction)),
+        (0, 0, _, _) => panic!(),
+        (_, 0, 0, _) => panic!(),
+        (_, 0, _, 0) => panic!(),
         (_, _, _, _) => Box::new(TensordotGeneral::new(&sized_contraction)),
     }
 }
@@ -144,16 +147,34 @@ fn einsum_pair_allused_deduped_indices<A: LinalgScalar>(
         cpc.contracted_indices.len(),
         cpc.lhs_indices.len(),
         cpc.rhs_indices.len(),
+        cpc.lhs_indices.len() > cpc.stack_indices.len(),
+        cpc.rhs_indices.len() > cpc.stack_indices.len(),
     ) {
-        (_, 0, 0, _, _) => {
+        (_, 0, 0, _, _, _, _) => {
             let hadamarder = HadamardProductGeneral::new(&sized_contraction);
             hadamarder.contract_pair(lhs, rhs)
         }
-        (0, _, _, _, _) => {
-            let contractor = get_pair_contractor(&sized_contraction);
+        (0, _, 0, 0, _, _, _) => {
+            let scalermatrixer = ScalarMatrixProductGeneral::new(&sized_contraction);
+            scalermatrixer.contract_pair(lhs, rhs)
+        }
+        (0, _, 0, _, 0, _, _) => {
+            let matrixscalerer = MatrixScalarProductGeneral::new(&sized_contraction);
+            matrixscalerer.contract_pair(lhs, rhs)
+        }
+        (0, _, _, _, _, _, _) => {
+            let tensordotter = TensordotGeneral::new(&sized_contraction);
+            tensordotter.contract_pair(lhs, rhs)
+        }
+        (_, _, 0, _, _, false, _) => {
+            let contractor = BroadcastProductGeneral::new(&sized_contraction);
             contractor.contract_pair(lhs, rhs)
         }
-        (_, _, _, _, _) => {
+        (_, _, 0, _, _, _, false) => {
+            let contractor = BroadcastProductGeneral::new(&sized_contraction);
+            contractor.contract_pair(lhs, rhs)
+        }
+        (_, _, _, _, _, _, _) => {
             // (1) Permute the stack indices to the front of LHS and RHS and
             //     Reshape into (N, ...non-stacked LHS shape), (N, ...non-stacked RHS shape)
             let mut stack_index_order = Vec::new();

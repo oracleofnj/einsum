@@ -10,7 +10,10 @@ use singleton_contractors::{
 };
 
 mod pair_contractors;
-pub use pair_contractors::{HadamardProductGeneral, TensordotFixedPosition, TensordotGeneral, ScalarMatrixProductGeneral, MatrixScalarProductGeneral};
+pub use pair_contractors::{
+    BroadcastProductGeneral, HadamardProductGeneral, MatrixScalarProductGeneral,
+    ScalarMatrixProductGeneral, TensordotFixedPosition, TensordotGeneral,
+};
 
 pub trait SingletonViewer<A> {
     fn view_singleton<'a, 'b>(&self, tensor: &'b ArrayViewD<'a, A>) -> ArrayViewD<'b, A>
@@ -52,7 +55,6 @@ pub trait PairContractor<A> {
         out.assign(&result);
     }
 }
-
 
 pub struct SingletonContraction<A> {
     op: Box<dyn SingletonContractor<A>>,
