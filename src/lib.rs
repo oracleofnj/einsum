@@ -63,100 +63,6 @@ pub fn einsum_singleton<A: LinalgScalar>(
     csc.contract_singleton(tensor)
 }
 
-fn einsum_pair_allused_nostacks_classified_deduped_indices<A: LinalgScalar>(
-    classified_pair_contraction: &ClassifiedDedupedPairContraction,
-    lhs: &ArrayViewD<A>,
-    rhs: &ArrayViewD<A>,
-    output: &mut ArrayViewMutD<A>,
-) {
-    // Allowed: abc,bce->ae
-    // Not allowed: abc,acd -> abd [a in lhs, rhs, and output]
-    // Not allowed: abc,bcde -> ae [no d in output]
-    // Not allowed: abbc,bce -> ae [repeated b in input]
-    // In other words: each index of each tensor is unique,
-    // and is either in the other tensor or in the output, but not both
-
-    // If an index is in both tensors, it's part of the tensordot op
-    // Otherwise, it's in the output and we need to permute into the correct order
-    // afterwards
-
-    assert_eq!(classified_pair_contraction.stack_indices.len(), 0);
-    match (
-        classified_pair_contraction.contracted_indices.len(),
-        classified_pair_contraction.lhs_indices.len(),
-        classified_pair_contraction.rhs_indices.len(),
-    ) {
-        (0, 0, 0) => {
-            panic!();
-            // let scalarize = IxDyn(&[]);
-            // output[&scalarize] = lhs[&scalarize] * rhs[&scalarize];
-        }
-        (0, 0, _) => {
-            let rhs_indices = classified_pair_contraction
-                .rhs_indices
-                .iter()
-                .map(|x| x.index)
-                .collect::<Vec<_>>();
-            let output_indices = classified_pair_contraction
-                .output_indices
-                .iter()
-                .map(|x| x.index)
-                .collect::<Vec<_>>();
-            let scalarmatrixer =
-                ScalarMatrixProductGeneral::from_indices(&rhs_indices, &output_indices);
-
-            scalarmatrixer.contract_and_assign_pair(lhs, rhs, output);
-        }
-        (0, _, 0) => {
-            let lhs_indices = classified_pair_contraction
-                .lhs_indices
-                .iter()
-                .map(|x| x.index)
-                .collect::<Vec<_>>();
-            let output_indices = classified_pair_contraction
-                .output_indices
-                .iter()
-                .map(|x| x.index)
-                .collect::<Vec<_>>();
-            let matrixscalarer =
-                MatrixScalarProductGeneral::from_indices(&lhs_indices, &output_indices);
-
-            matrixscalarer.contract_and_assign_pair(lhs, rhs, output);
-        }
-        _ => {
-            let lhs_indices = classified_pair_contraction
-                .lhs_indices
-                .iter()
-                .map(|x| x.index)
-                .collect::<Vec<_>>();
-            let rhs_indices = classified_pair_contraction
-                .rhs_indices
-                .iter()
-                .map(|x| x.index)
-                .collect::<Vec<_>>();
-            let contracted_indices = classified_pair_contraction
-                .contracted_indices
-                .iter()
-                .map(|(&k, _)| k)
-                .collect::<Vec<_>>();
-            let output_indices = classified_pair_contraction
-                .output_indices
-                .iter()
-                .map(|x| x.index)
-                .collect::<Vec<_>>();
-            let tensordotter = TensordotGeneral::from_shapes_and_indices(
-                &lhs.shape(),
-                &rhs.shape(),
-                &lhs_indices,
-                &rhs_indices,
-                &contracted_indices,
-                &output_indices,
-            );
-            tensordotter.contract_and_assign_pair(lhs, rhs, output);
-        }
-    }
-}
-
 fn move_stack_indices_to_front<A: LinalgScalar>(
     input_indices: &[IndexWithPairInfo],
     stack_index_order: &[char],
@@ -198,12 +104,6 @@ fn get_intermediate_result<A: LinalgScalar>(
         let lhs_subview = lhs_iter.next().unwrap();
         let rhs_subview = rhs_iter.next().unwrap();
         inner_contractor.contract_and_assign_pair(&lhs_subview, &rhs_subview, &mut output_subview);
-        // einsum_pair_allused_nostacks_classified_deduped_indices(
-        //     &new_cdpc,
-        //     &lhs_subview,
-        //     &rhs_subview,
-        //     &mut output_subview,
-        // );
     }
     temp_result
 }
@@ -262,13 +162,11 @@ fn einsum_pair_allused_deduped_indices<A: LinalgScalar>(
                     stack_index_order.push(idx.index);
                 }
             }
-            // OLD:
             let lhs_reshaped =
                 move_stack_indices_to_front(&cpc.lhs_indices, &stack_index_order, &lhs);
             let rhs_reshaped =
                 move_stack_indices_to_front(&cpc.rhs_indices, &stack_index_order, &rhs);
 
-            // NEW:
             let mut lhs_stack_axes = Vec::new();
             let mut rhs_stack_axes = Vec::new();
             for &c in stack_index_order.iter() {
@@ -285,10 +183,6 @@ fn einsum_pair_allused_deduped_indices<A: LinalgScalar>(
                         .unwrap(),
                 );
             }
-            // let lhs_dyn_view = lhs.view().into_dyn();
-            // let rhs_dyn_view = rhs.view().into_dyn();
-            // let mut lhs_iter = MultiAxisIterator::new(&lhs_dyn_view, &lhs_stack_axes);
-            // let mut rhs_iter = MultiAxisIterator::new(&rhs_dyn_view, &rhs_stack_axes);
 
             // (2) Construct the non-stacked ClassifiedDedupedPairContraction
             let mut unstacked_lhs_chars = Vec::new();
@@ -331,7 +225,6 @@ fn einsum_pair_allused_deduped_indices<A: LinalgScalar>(
                 output_size: sized_contraction.output_size.clone(),
             };
             let inner_contractor = get_pair_contractor(&new_sized_contraction);
-            let new_cdpc = generate_classified_pair_contraction(&new_sized_contraction);
 
             // (3) for i = 0..N, assign the result of _allused_nostacks_
             //     to unshaped_result[i]
