@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::classifiers::ClassifiedDedupedPairContraction;
 use lazy_static::lazy_static;
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
@@ -35,7 +34,8 @@ pub use optimizers::{
 mod contractors;
 pub use contractors::{
     BroadcastProductGeneral, HadamardProductGeneral, MatrixScalarProductGeneral, PairContractor,
-    ScalarMatrixProductGeneral, SingletonContraction, SingletonContractor, TensordotGeneral,
+    ScalarMatrixProductGeneral, SingletonContraction, SingletonContractor, StackedTensordotGeneral,
+    TensordotGeneral,
 };
 
 mod classifiers;
@@ -61,70 +61,6 @@ pub fn einsum_singleton<A: LinalgScalar>(
 ) -> ArrayD<A> {
     let csc = SingletonContraction::new(&sized_contraction);
     csc.contract_singleton(tensor)
-}
-
-fn move_stack_indices_to_front<A: LinalgScalar>(
-    input_indices: &[IndexWithPairInfo],
-    stack_index_order: &[char],
-    tensor: &ArrayViewD<A>,
-) -> ArrayD<A> {
-    let mut permutation: Vec<usize> = Vec::new();
-    let mut output_shape: Vec<usize> = Vec::new();
-    output_shape.push(1);
-
-    for &c in stack_index_order {
-        permutation.push(input_indices.iter().position(|idx| idx.index == c).unwrap());
-    }
-
-    for (i, (idx, &axis_length)) in input_indices.iter().zip(tensor.shape().iter()).enumerate() {
-        if let PairIndexInfo::StackInfo(_) = idx.index_info {
-            output_shape[0] *= axis_length;
-        } else {
-            permutation.push(i);
-            output_shape.push(axis_length);
-        }
-    }
-
-    let temp_result = tensor.view().permuted_axes(permutation);
-
-    Array::from_shape_vec(IxDyn(&output_shape), temp_result.iter().cloned().collect()).unwrap()
-}
-
-#[inline(never)]
-fn get_intermediate_result<A: LinalgScalar>(
-    temp_shape: &[usize],
-    lhs_reshaped: &ArrayD<A>,
-    rhs_reshaped: &ArrayD<A>,
-    inner_contractor: &Box<dyn PairContractor<A>>,
-) -> ArrayD<A> {
-    let mut temp_result: ArrayD<A> = Array::zeros(IxDyn(&temp_shape));
-    let mut lhs_iter = lhs_reshaped.outer_iter();
-    let mut rhs_iter = rhs_reshaped.outer_iter();
-    for mut output_subview in temp_result.outer_iter_mut() {
-        let lhs_subview = lhs_iter.next().unwrap();
-        let rhs_subview = rhs_iter.next().unwrap();
-        inner_contractor.contract_and_assign_pair(&lhs_subview, &rhs_subview, &mut output_subview);
-    }
-    temp_result
-}
-
-fn get_pair_contractor<A>(sized_contraction: &SizedContraction) -> Box<dyn PairContractor<A>> {
-    let cpc = generate_classified_pair_contraction(sized_contraction);
-
-    match (
-        cpc.outer_indices.len(),
-        cpc.contracted_indices.len(),
-        cpc.lhs_indices.len(),
-        cpc.rhs_indices.len(),
-    ) {
-        // (0, 0, _, _) => Box::new(HadamardProductGeneral::new(&sized_contraction)),
-        // (_, 0, 0, _) => Box::new(ScalarMatrixProductGeneral::new(&sized_contraction)),
-        // (_, 0, _, 0) => Box::new(MatrixScalarProductGeneral::new(&sized_contraction)),
-        (0, 0, _, _) => panic!(),
-        (_, 0, 0, _) => panic!(),
-        (_, 0, _, 0) => panic!(),
-        (_, _, _, _) => Box::new(TensordotGeneral::new(&sized_contraction)),
-    }
 }
 
 fn einsum_pair_allused_deduped_indices<A: LinalgScalar>(
@@ -166,10 +102,10 @@ fn einsum_pair_allused_deduped_indices<A: LinalgScalar>(
             let tensordotter = TensordotGeneral::new(&sized_contraction);
             tensordotter.contract_pair(lhs, rhs)
         }
-        (_, _, 0, _, _, _, _) => {
-            let contractor = BroadcastProductGeneral::new(&sized_contraction);
-            contractor.contract_pair(lhs, rhs)
-        }
+        // (_, _, 0, _, _, _, _) => {
+        //     let contractor = BroadcastProductGeneral::new(&sized_contraction);
+        //     contractor.contract_pair(lhs, rhs)
+        // }
         // (_, _, 0, _, _, false, _) => {
         //     let contractor = BroadcastProductGeneral::new(&sized_contraction);
         //     contractor.contract_pair(lhs, rhs)
@@ -179,129 +115,8 @@ fn einsum_pair_allused_deduped_indices<A: LinalgScalar>(
         //     contractor.contract_pair(lhs, rhs)
         // }
         (_, _, _, _, _, _, _) => {
-            // (1) Permute the stack indices to the front of LHS and RHS and
-            //     Reshape into (N, ...non-stacked LHS shape), (N, ...non-stacked RHS shape)
-            let mut stack_index_order = Vec::new();
-            for idx in cpc.output_indices.iter() {
-                if let PairIndexInfo::StackInfo(_) = idx.index_info {
-                    stack_index_order.push(idx.index);
-                }
-            }
-            let lhs_reshaped =
-                move_stack_indices_to_front(&cpc.lhs_indices, &stack_index_order, &lhs);
-            let rhs_reshaped =
-                move_stack_indices_to_front(&cpc.rhs_indices, &stack_index_order, &rhs);
-
-            let mut lhs_stack_axes = Vec::new();
-            let mut rhs_stack_axes = Vec::new();
-            for &c in stack_index_order.iter() {
-                lhs_stack_axes.push(
-                    cpc.lhs_indices
-                        .iter()
-                        .position(|idx| idx.index == c)
-                        .unwrap(),
-                );
-                rhs_stack_axes.push(
-                    cpc.rhs_indices
-                        .iter()
-                        .position(|idx| idx.index == c)
-                        .unwrap(),
-                );
-            }
-
-            // (2) Construct the non-stacked ClassifiedDedupedPairContraction
-            let mut unstacked_lhs_chars = Vec::new();
-            let mut unstacked_rhs_chars = Vec::new();
-            let mut unstacked_output_chars = Vec::new();
-            let mut summation_chars = Vec::new();
-            let mut num_subviews = 1;
-            for idx in cpc.lhs_indices.iter() {
-                match idx.index_info {
-                    PairIndexInfo::OuterInfo(_) => {
-                        unstacked_lhs_chars.push(idx.index);
-                    }
-                    PairIndexInfo::ContractedInfo(_) => {
-                        unstacked_lhs_chars.push(idx.index);
-                        summation_chars.push(idx.index);
-                    }
-                    PairIndexInfo::StackInfo(_) => {
-                        num_subviews *= sized_contraction.output_size[&idx.index];
-                    }
-                }
-            }
-            for idx in cpc.rhs_indices.iter() {
-                if let PairIndexInfo::StackInfo(_) = idx.index_info {
-                } else {
-                    unstacked_rhs_chars.push(idx.index);
-                }
-            }
-            for idx in cpc.output_indices.iter() {
-                if let PairIndexInfo::StackInfo(_) = idx.index_info {
-                } else {
-                    unstacked_output_chars.push(idx.index);
-                }
-            }
-            let new_sized_contraction = SizedContraction {
-                contraction: Contraction {
-                    operand_indices: vec![unstacked_lhs_chars.clone(), unstacked_rhs_chars.clone()],
-                    output_indices: unstacked_output_chars,
-                    summation_indices: summation_chars,
-                },
-                output_size: sized_contraction.output_size.clone(),
-            };
-            let inner_contractor = get_pair_contractor(&new_sized_contraction);
-
-            // (3) for i = 0..N, assign the result of _allused_nostacks_
-            //     to unshaped_result[i]
-            let mut temp_shape: Vec<usize> = Vec::new();
-            temp_shape.push(num_subviews);
-            let mut final_shape: Vec<usize> = Vec::new();
-            let mut intermediate_indices: Vec<char> = Vec::new();
-            for (idx, c) in cpc
-                .output_indices
-                .iter()
-                .zip(sized_contraction.contraction.output_indices.iter())
-            {
-                if let PairIndexInfo::StackInfo(_) = idx.index_info {
-                    final_shape.push(sized_contraction.output_size[c]);
-                    intermediate_indices.push(*c);
-                }
-            }
-            for (idx, c) in cpc
-                .output_indices
-                .iter()
-                .zip(sized_contraction.contraction.output_indices.iter())
-            {
-                if let PairIndexInfo::StackInfo(_) = idx.index_info {
-                } else {
-                    temp_shape.push(sized_contraction.output_size[c]);
-                    final_shape.push(sized_contraction.output_size[c]);
-                    intermediate_indices.push(*c);
-                }
-            }
-            let temp_result = get_intermediate_result(
-                &temp_shape,
-                &lhs_reshaped,
-                &rhs_reshaped,
-                &inner_contractor,
-            );
-            // (6) Permute into correct order
-            let mut permutation: Vec<usize> = Vec::new();
-            for &c in intermediate_indices.iter() {
-                permutation.push(
-                    sized_contraction
-                        .contraction
-                        .output_indices
-                        .iter()
-                        .position(|&x| x == c)
-                        .unwrap(),
-                );
-            }
-
-            temp_result
-                .into_shape(IxDyn(&final_shape))
-                .unwrap()
-                .permuted_axes(permutation)
+            let contractor = StackedTensordotGeneral::new(&sized_contraction);
+            contractor.contract_pair(lhs, rhs)
         }
     }
 }

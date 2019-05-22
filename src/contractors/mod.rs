@@ -12,7 +12,7 @@ use singleton_contractors::{
 mod pair_contractors;
 pub use pair_contractors::{
     BroadcastProductGeneral, HadamardProductGeneral, MatrixScalarProductGeneral,
-    ScalarMatrixProductGeneral, TensordotFixedPosition, TensordotGeneral,
+    ScalarMatrixProductGeneral, StackedTensordotGeneral, TensordotFixedPosition, TensordotGeneral,
 };
 
 pub trait SingletonViewer<A> {
@@ -29,7 +29,7 @@ pub trait SingletonContractor<A> {
         A: Clone + LinalgScalar;
 }
 
-pub trait PairContractor<A> {
+pub trait PairContractor<A>: std::fmt::Debug {
     fn contract_pair<'a, 'b, 'c, 'd>(
         &self,
         lhs: &'b ArrayViewD<'a, A>,

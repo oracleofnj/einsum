@@ -1,9 +1,9 @@
 use ndarray::prelude::*;
 use ndarray::LinalgScalar;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use super::{PairContractor, Permutation, SingletonContractor, SingletonViewer};
-use crate::{Contraction, SizedContraction};
+use crate::SizedContraction;
 
 fn maybe_find_outputs_in_inputs_unique(
     output_indices: &[char],
@@ -697,8 +697,8 @@ impl StackedTensordotGeneral {
                     lhs_stack_axes.push(lhs_pos);
                     rhs_stack_axes.push(rhs_pos);
                     stack_indices.push(output_char);
-                    rhs_output_shape[0] *= sc.output_size[&output_char];
                     lhs_output_shape[0] *= sc.output_size[&output_char];
+                    rhs_output_shape[0] *= sc.output_size[&output_char];
                 }
                 (Some(lhs_pos), None) => {
                     lhs_outer_axes.push(lhs_pos);
@@ -730,6 +730,8 @@ impl StackedTensordotGeneral {
                         .position(|&rhs_char| rhs_char == lhs_char)
                         .unwrap(),
                 );
+                lhs_output_shape.push(sc.output_size[&lhs_char]);
+                rhs_output_shape.push(sc.output_size[&lhs_char]);
             }
         }
         // What order do we want the axes in?
@@ -755,7 +757,7 @@ impl StackedTensordotGeneral {
         for lhs_char in lhs_outer_indices.iter() {
             intermediate_shape.push(sc.output_size[lhs_char]);
         }
-        for rhs_char in lhs_outer_indices.iter() {
+        for rhs_char in rhs_outer_indices.iter() {
             intermediate_shape.push(sc.output_size[rhs_char]);
         }
 
@@ -799,16 +801,18 @@ impl<A> PairContractor<A> for StackedTensordotGeneral {
         A: Clone + LinalgScalar,
     {
         // TODO (right away): fix this, needs to clone so it's standard layout
-        let lhs_reshaped = self
-            .lhs_permutation
-            .view_singleton(lhs)
-            .into_shape(IxDyn(&self.lhs_output_shape))
-            .unwrap();
-        let rhs_reshaped = self
-            .rhs_permutation
-            .view_singleton(rhs)
-            .into_shape(IxDyn(&self.rhs_output_shape))
-            .unwrap();
+        let lhs_permuted = self.lhs_permutation.view_singleton(lhs);
+        let lhs_reshaped = Array::from_shape_vec(
+            IxDyn(&self.lhs_output_shape),
+            lhs_permuted.iter().cloned().collect(),
+        )
+        .unwrap();
+        let rhs_permuted = self.rhs_permutation.view_singleton(rhs);
+        let rhs_reshaped = Array::from_shape_vec(
+            IxDyn(&self.rhs_output_shape),
+            rhs_permuted.iter().cloned().collect(),
+        )
+        .unwrap();
         let mut intermediate_result: ArrayD<A> = Array::zeros(IxDyn(&self.intermediate_shape));
         let mut lhs_iter = lhs_reshaped.outer_iter();
         let mut rhs_iter = rhs_reshaped.outer_iter();
