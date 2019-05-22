@@ -664,18 +664,112 @@ impl StackedTensordotGeneral {
         let mut rhs_order = Vec::new();
         let mut lhs_output_shape = Vec::new();
         let mut rhs_output_shape = Vec::new();
-        let mut output_order = Vec::new();
-        let mut lhs_shape = Vec::new();
-        let mut rhs_shape = Vec::new();
         let mut intermediate_shape = Vec::new();
-        let mut output_shape = Vec::new();
-        let num_contracted_axes = 1;
+
+        assert_eq!(sc.contraction.operand_indices.len(), 2);
+        let lhs_indices = &sc.contraction.operand_indices[0];
+        let rhs_indices = &sc.contraction.operand_indices[1];
+        let output_indices = &sc.contraction.output_indices;
+
+        let maybe_lhs_axes = maybe_find_outputs_in_inputs_unique(&output_indices, &lhs_indices);
+        let maybe_rhs_axes = maybe_find_outputs_in_inputs_unique(&output_indices, &rhs_indices);
+        let mut lhs_stack_axes = Vec::new();
+        let mut rhs_stack_axes = Vec::new();
+        let mut stack_indices = Vec::new();
+        let mut lhs_outer_axes = Vec::new();
+        let mut lhs_outer_indices = Vec::new();
+        let mut rhs_outer_axes = Vec::new();
+        let mut rhs_outer_indices = Vec::new();
+        let mut lhs_contracted_axes = Vec::new();
+        let mut rhs_contracted_axes = Vec::new();
+        let mut intermediate_indices = Vec::new();
+
+        lhs_output_shape.push(1);
+        rhs_output_shape.push(1);
+
+        for ((&maybe_lhs_pos, &maybe_rhs_pos), &output_char) in maybe_lhs_axes
+            .iter()
+            .zip(maybe_rhs_axes.iter())
+            .zip(output_indices.iter())
+        {
+            match (maybe_lhs_pos, maybe_rhs_pos) {
+                (Some(lhs_pos), Some(rhs_pos)) => {
+                    lhs_stack_axes.push(lhs_pos);
+                    rhs_stack_axes.push(rhs_pos);
+                    stack_indices.push(output_char);
+                    rhs_output_shape[0] *= sc.output_size[&output_char];
+                    lhs_output_shape[0] *= sc.output_size[&output_char];
+                }
+                (Some(lhs_pos), None) => {
+                    lhs_outer_axes.push(lhs_pos);
+                    lhs_outer_indices.push(output_char);
+                    lhs_output_shape.push(sc.output_size[&output_char]);
+                }
+                (None, Some(rhs_pos)) => {
+                    rhs_outer_axes.push(rhs_pos);
+                    rhs_outer_indices.push(output_char);
+                    rhs_output_shape.push(sc.output_size[&output_char]);
+                }
+                (None, None) => {
+                    panic!() // Output char must be either in lhs or rhs
+                }
+            }
+        }
+
+        for (lhs_pos, &lhs_char) in lhs_indices.iter().enumerate() {
+            if let None = output_indices
+                .iter()
+                .position(|&output_char| output_char == lhs_char)
+            {
+                // Contracted index
+                lhs_contracted_axes.push(lhs_pos);
+                // Must be in RHS if it's not in output
+                rhs_contracted_axes.push(
+                    rhs_indices
+                        .iter()
+                        .position(|&rhs_char| rhs_char == lhs_char)
+                        .unwrap(),
+                );
+            }
+        }
+        // What order do we want the axes in?
+        //
+        // LHS: Stack axes, outer axes, contracted axes
+        // RHS: Stack axes, contracted axes, outer axes
+
+        lhs_order.append(&mut lhs_stack_axes.clone());
+        lhs_order.append(&mut lhs_outer_axes.clone());
+        lhs_order.append(&mut lhs_contracted_axes.clone());
+        rhs_order.append(&mut rhs_stack_axes.clone());
+        rhs_order.append(&mut rhs_contracted_axes.clone());
+        rhs_order.append(&mut rhs_outer_axes.clone());
+
+        // What order will the intermediate output indices be in?
+        // Stack indices, lhs outer indices, rhs outer indices
+        intermediate_indices.append(&mut stack_indices.clone());
+        intermediate_indices.append(&mut lhs_outer_indices.clone());
+        intermediate_indices.append(&mut rhs_outer_indices.clone());
+
+        assert_eq!(lhs_output_shape[0], rhs_output_shape[0]);
+        intermediate_shape.push(lhs_output_shape[0]);
+        for lhs_char in lhs_outer_indices.iter() {
+            intermediate_shape.push(sc.output_size[lhs_char]);
+        }
+        for rhs_char in lhs_outer_indices.iter() {
+            intermediate_shape.push(sc.output_size[rhs_char]);
+        }
+
+        let output_order = find_outputs_in_inputs_unique(&output_indices, &intermediate_indices);
+        let output_shape = intermediate_indices
+            .iter()
+            .map(|c| sc.output_size[c])
+            .collect();
 
         let tensordot_fixed_position =
             TensordotFixedPosition::from_shapes_and_number_of_contracted_axes(
-                &lhs_shape,
-                &rhs_shape,
-                num_contracted_axes,
+                &lhs_output_shape[1..],
+                &rhs_output_shape[1..],
+                lhs_contracted_axes.len(),
             );
         let lhs_permutation = Permutation::from_indices(&lhs_order);
         let rhs_permutation = Permutation::from_indices(&rhs_order);
@@ -704,11 +798,6 @@ impl<A> PairContractor<A> for StackedTensordotGeneral {
         'c: 'd,
         A: Clone + LinalgScalar,
     {
-        // What order do we want the indices in?
-        //
-        // LHS: Stack indices, outer indices, contracted indices
-        // RHS: Stack indices, contracted indices, outer indices
-        //
         // TODO (right away): fix this, needs to clone so it's standard layout
         let lhs_reshaped = self
             .lhs_permutation
