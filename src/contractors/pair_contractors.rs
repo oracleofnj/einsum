@@ -800,7 +800,6 @@ impl<A> PairContractor<A> for StackedTensordotGeneral {
         'c: 'd,
         A: Clone + LinalgScalar,
     {
-        // TODO (right away): fix this, needs to clone so it's standard layout
         let lhs_permuted = self.lhs_permutation.view_singleton(lhs);
         let lhs_reshaped = Array::from_shape_vec(
             IxDyn(&self.lhs_output_shape),
