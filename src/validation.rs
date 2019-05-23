@@ -1,5 +1,8 @@
-use crate::*;
+use crate::ArrayLike;
+use lazy_static::lazy_static;
+use regex::Regex;
 use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug)]
 struct EinsumParse {
@@ -14,12 +17,89 @@ pub struct Contraction {
     pub summation_indices: Vec<char>,
 }
 
+impl Contraction {
+    pub fn from_indices(
+        operand_indices: &[Vec<char>],
+        output_indices: &[char],
+    ) -> Result<Self, &'static str> {
+        let mut input_char_counts = HashMap::new();
+        for &c in operand_indices.iter().flat_map(|operand| operand.iter()) {
+            *input_char_counts.entry(c).or_insert(0) += 1;
+        }
+
+        let mut distinct_output_indices = HashMap::new();
+        for &c in output_indices.iter() {
+            *distinct_output_indices.entry(c).or_insert(0) += 1;
+        }
+        for (&c, &n) in distinct_output_indices.iter() {
+            // No duplicates
+            if n > 1 {
+                return Err("Requested output has duplicate index");
+            }
+
+            // Must be in inputs
+            if input_char_counts.get(&c).is_none() {
+                return Err("Requested output contains an index not found in inputs");
+            }
+        }
+
+        let mut summation_indices: Vec<char> = input_char_counts
+            .keys()
+            .filter(|&c| distinct_output_indices.get(c).is_none())
+            .cloned()
+            .collect();
+        summation_indices.sort();
+
+        let cloned_operand_indices: Vec<Vec<char>> = operand_indices.iter().cloned().collect();
+
+        Ok(Contraction {
+            operand_indices: cloned_operand_indices,
+            output_indices: output_indices.to_vec(),
+            summation_indices,
+        })
+    }
+}
+
 pub type OutputSize = HashMap<char, usize>;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SizedContraction {
     pub contraction: Contraction,
     pub output_size: OutputSize,
+}
+
+impl SizedContraction {
+    pub fn subset(
+        &self,
+        new_operand_indices: &[Vec<char>],
+        new_output_indices: &[char],
+    ) -> Result<Self, &'static str> {
+        // Make sure all chars in new_operand_indices are in self
+        let all_operand_indices: HashSet<char> = new_operand_indices
+            .iter()
+            .flat_map(|operand| operand.iter())
+            .cloned()
+            .collect();
+        if all_operand_indices
+            .iter()
+            .any(|c| self.output_size.get(c).is_none())
+        {
+            return Err("Character found in new_operand_indices but not in self.output_size");
+        }
+
+        let new_contraction = Contraction::from_indices(new_operand_indices, new_output_indices)?;
+        let new_output_size: OutputSize = self
+            .output_size
+            .iter()
+            .filter(|(&k, _)| all_operand_indices.contains(&k))
+            .map(|(&k, &v)| (k, v))
+            .collect();
+
+        Ok(SizedContraction {
+            contraction: new_contraction,
+            output_size: new_output_size,
+        })
+    }
 }
 
 fn generate_contraction(parse: &EinsumParse) -> Result<Contraction, &'static str> {
@@ -31,15 +111,15 @@ fn generate_contraction(parse: &EinsumParse) -> Result<Contraction, &'static str
     let mut unique_indices = Vec::new();
     let mut duplicated_indices = Vec::new();
     for (&c, &n) in input_indices.iter() {
-        let dst = if n > 1 {
-            &mut duplicated_indices
+        if n > 1 {
+            duplicated_indices.push(c);
         } else {
-            &mut unique_indices
+            unique_indices.push(c);
         };
-        dst.push(c);
     }
 
-    let requested_output_indices = match &parse.output_indices {
+    // Handle implicit case, e.g. nothing to the right of the arrow
+    let requested_output_indices: Vec<char> = match &parse.output_indices {
         Some(s) => s.chars().collect(),
         _ => {
             let mut o = unique_indices.clone();
@@ -47,41 +127,13 @@ fn generate_contraction(parse: &EinsumParse) -> Result<Contraction, &'static str
             o
         }
     };
-    let mut distinct_output_indices = HashMap::new();
-    for &c in requested_output_indices.iter() {
-        *distinct_output_indices.entry(c).or_insert(0) += 1;
-    }
-    for (&c, &n) in distinct_output_indices.iter() {
-        // No duplicates
-        if n > 1 {
-            return Err("Requested output has duplicate index");
-        }
 
-        // Must be in inputs
-        if input_indices.get(&c).is_none() {
-            return Err("Requested output contains an index not found in inputs");
-        }
-    }
-
-    let output_indices = requested_output_indices;
-    let mut summation_indices = Vec::new();
-    for (&c, _) in input_indices.iter() {
-        if distinct_output_indices.get(&c).is_none() {
-            summation_indices.push(c);
-        }
-    }
-    summation_indices.sort();
-
-    let mut operand_indices: Vec<Vec<char>> = Vec::new();
-    for op in parse.operand_indices.iter() {
-        operand_indices.push(op.chars().collect());
-    }
-
-    Ok(Contraction {
-        operand_indices,
-        output_indices,
-        summation_indices,
-    })
+    let operand_indices: Vec<Vec<char>> = parse
+        .operand_indices
+        .iter()
+        .map(|x| x.chars().collect::<Vec<char>>())
+        .collect();
+    Contraction::from_indices(&operand_indices, &requested_output_indices)
 }
 
 fn parse_einsum_string(input_string: &str) -> Option<EinsumParse> {
@@ -155,13 +207,6 @@ fn get_operand_shapes<A>(operands: &[&dyn ArrayLike<A>]) -> Vec<Vec<usize>> {
         .collect()
 }
 
-// pub fn get_output_size<A>(
-//     contraction: &Contraction,
-//     operands: &[&dyn ArrayLike<A>],
-// ) -> Result<HashMap<char, usize>, &'static str> {
-//     get_output_size_from_shapes(contraction, &get_operand_shapes(operands))
-// }
-//
 pub fn validate_and_size_from_shapes(
     input_string: &str,
     operand_shapes: &Vec<Vec<usize>>,

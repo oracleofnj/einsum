@@ -1,4 +1,4 @@
-use crate::{validate, Contraction, OutputSize, SizedContraction};
+use crate::SizedContraction;
 use std::collections::HashSet;
 
 #[derive(Debug)]
@@ -68,54 +68,58 @@ fn generate_permuted_contraction(
     for &i in tensor_order {
         new_operand_indices.push(sized_contraction.contraction.operand_indices[i].clone());
     }
-    let new_contraction = Contraction {
-        operand_indices: new_operand_indices,
-        output_indices: sized_contraction.contraction.output_indices.clone(),
-        summation_indices: sized_contraction.contraction.summation_indices.clone(),
-    };
-    SizedContraction {
-        contraction: new_contraction,
-        output_size: sized_contraction.output_size.clone(),
-    }
+    sized_contraction
+        .subset(
+            &new_operand_indices,
+            &sized_contraction.contraction.output_indices,
+        )
+        .unwrap()
 }
 
 fn generate_sized_contraction_pair(
     lhs_operand_indices: &[char],
     rhs_operand_indices: &[char],
     output_indices: &[char],
-    full_output_size: &OutputSize,
+    orig_contraction: &SizedContraction,
 ) -> SizedContraction {
     // Generate a new SizedContraction for a single pair from the larger SizedContraction.
     // This delegates the details back to validate() by creating a string rather than
     // duplicate the code. Potentially inefficient if called in a loop, but is only
     // executed once for each pair.
 
-    let lhs_str: String = lhs_operand_indices.iter().collect();
-    let rhs_str: String = rhs_operand_indices.iter().collect();
-    let output_str: String = output_indices.iter().collect();
+    orig_contraction
+        .subset(
+            &[lhs_operand_indices.to_vec(), rhs_operand_indices.to_vec()],
+            output_indices,
+        )
+        .unwrap()
 
-    let einsum_str = format!("{},{}->{}", &lhs_str, &rhs_str, &output_str);
-    let contraction = validate(&einsum_str).unwrap();
-
-    // Only keep the output sizes that are actually used in this contraction
-    let mut index_set: HashSet<char> = lhs_operand_indices.iter().cloned().collect();
-    for &c in rhs_operand_indices {
-        index_set.insert(c);
-    }
-    for &c in output_indices {
-        index_set.insert(c);
-    }
-
-    let output_size: OutputSize = full_output_size
-        .iter()
-        .filter(|(k, _)| index_set.contains(k))
-        .map(|(&k, &v)| (k, v))
-        .collect();
-
-    SizedContraction {
-        contraction,
-        output_size,
-    }
+    // let lhs_str: String = lhs_operand_indices.iter().collect();
+    // let rhs_str: String = rhs_operand_indices.iter().collect();
+    // let output_str: String = output_indices.iter().collect();
+    //
+    // let einsum_str = format!("{},{}->{}", &lhs_str, &rhs_str, &output_str);
+    // let contraction = validate(&einsum_str).unwrap();
+    //
+    // // Only keep the output sizes that are actually used in this contraction
+    // let mut index_set: HashSet<char> = lhs_operand_indices.iter().cloned().collect();
+    // for &c in rhs_operand_indices {
+    //     index_set.insert(c);
+    // }
+    // for &c in output_indices {
+    //     index_set.insert(c);
+    // }
+    //
+    // let output_size: OutputSize = full_output_size
+    //     .iter()
+    //     .filter(|(k, _)| index_set.contains(k))
+    //     .map(|(&k, &v)| (k, v))
+    //     .collect();
+    //
+    // SizedContraction {
+    //     contraction,
+    //     output_size,
+    // }
 }
 
 fn generate_path(sized_contraction: &SizedContraction, tensor_order: &[usize]) -> EinsumPath {
@@ -144,7 +148,7 @@ fn generate_path(sized_contraction: &SizedContraction, tensor_order: &[usize]) -
                 &permuted_contraction.contraction.operand_indices[0],
                 &permuted_contraction.contraction.operand_indices[1],
                 &permuted_contraction.contraction.output_indices,
-                &permuted_contraction.output_size,
+                &permuted_contraction,
             );
             let first_step = FirstStep {
                 sized_contraction: sc,
@@ -234,7 +238,7 @@ fn generate_path(sized_contraction: &SizedContraction, tensor_order: &[usize]) -
                     &lhs_indices,
                     &rhs_indices,
                     &output_indices,
-                    &permuted_contraction.output_size,
+                    &permuted_contraction,
                 );
 
                 if idx_of_lhs == 0 {

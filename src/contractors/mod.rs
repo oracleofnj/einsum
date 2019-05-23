@@ -1,6 +1,5 @@
 use crate::classifiers::generate_classified_pair_contraction;
-use crate::validation::OutputSize;
-use crate::{Contraction, SizedContraction};
+use crate::SizedContraction;
 use ndarray::prelude::*;
 use ndarray::LinalgScalar;
 use std::collections::{HashMap, HashSet};
@@ -189,7 +188,7 @@ impl<A> SimplificationMethodAndOutput<A> {
         this_input_indices: &[char],
         other_input_indices: &[char],
         output_indices: &[char],
-        output_size: &OutputSize,
+        orig_contraction: &SizedContraction,
     ) -> Self {
         let this_input_uniques: HashSet<char> = this_input_indices.iter().cloned().collect();
         let other_input_uniques: HashSet<char> = other_input_indices.iter().cloned().collect();
@@ -205,17 +204,9 @@ impl<A> SimplificationMethodAndOutput<A> {
             .collect();
         let simplified_indices: Vec<char> = desired_uniques.iter().cloned().collect();
 
-        let simplification_sc = SizedContraction {
-            contraction: Contraction {
-                operand_indices: vec![this_input_indices.to_vec()],
-                summation_indices: this_input_uniques
-                    .difference(&desired_uniques)
-                    .cloned()
-                    .collect(),
-                output_indices: simplified_indices.clone(),
-            },
-            output_size: output_size.clone(),
-        };
+        let simplification_sc = orig_contraction
+            .subset(&[this_input_indices.to_vec()], &simplified_indices)
+            .unwrap();
 
         let singleton_summary = SingletonSummary::new(&simplification_sc);
 
@@ -271,37 +262,23 @@ impl<A> PairContraction<A> {
             &lhs_indices,
             &rhs_indices,
             &output_indices,
-            &sc.output_size,
+            sc,
         );
         let rhs_simplification_and_output = SimplificationMethodAndOutput::from_indices_and_sizes(
             &rhs_indices,
             &lhs_indices,
             &output_indices,
-            &sc.output_size,
+            sc,
         );
         let lhs_simplification = lhs_simplification_and_output.method;
         let new_lhs_indices = lhs_simplification_and_output.new_indices;
         let rhs_simplification = rhs_simplification_and_output.method;
         let new_rhs_indices = rhs_simplification_and_output.new_indices;
 
-        let mut both_indices = new_lhs_indices.clone();
-        both_indices.append(&mut new_rhs_indices.clone());
-        let mut summation_indices: Vec<char> = both_indices
-            .iter()
-            .filter(|&&c| output_indices.iter().position(|&x| x == c).is_none())
-            .cloned()
-            .collect();
-        summation_indices.sort();
-        summation_indices.dedup();
+        let reduced_sc = sc
+            .subset(&[new_lhs_indices, new_rhs_indices], &output_indices)
+            .unwrap();
 
-        let reduced_sc = SizedContraction {
-            contraction: Contraction {
-                operand_indices: vec![new_lhs_indices, new_rhs_indices],
-                summation_indices,
-                output_indices: output_indices.clone(),
-            },
-            output_size: sc.output_size.clone(),
-        };
         let cpc = generate_classified_pair_contraction(&reduced_sc);
 
         let op: Box<dyn PairContractor<A>> = match (
