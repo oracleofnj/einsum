@@ -32,10 +32,8 @@ pub use optimizers::{
 };
 
 mod contractors;
-pub use contractors::{
-    BroadcastProductGeneral, HadamardProductGeneral, MatrixScalarProductGeneral, PairContraction,
-    PairContractor, ScalarMatrixProductGeneral, SingletonContraction, SingletonContractor,
-    StackedTensordotGeneral, TensordotGeneral,
+use contractors::{
+    PairContraction, PairContractor, SingletonContraction, SingletonContractor, TensordotGeneral,
 };
 
 mod classifiers;

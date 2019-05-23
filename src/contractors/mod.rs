@@ -177,10 +177,7 @@ impl<A> SingletonContractor<A> for SingletonContraction<A> {
     }
 }
 
-enum SingletonSimplificationMethod<A> {
-    Contraction(Box<dyn SingletonContractor<A>>),
-    View(Box<dyn SingletonViewer<A>>),
-}
+type SingletonSimplificationMethod<A> = Option<Box<dyn SingletonContractor<A>>>;
 
 struct SimplificationMethodAndOutput<A> {
     method: SingletonSimplificationMethod<A>,
@@ -206,7 +203,7 @@ impl<A> SimplificationMethodAndOutput<A> {
             .intersection(&other_and_output)
             .cloned()
             .collect();
-        let new_indices: Vec<char> = desired_uniques.iter().cloned().collect();
+        let simplified_indices: Vec<char> = desired_uniques.iter().cloned().collect();
 
         let simplification_sc = SizedContraction {
             contraction: Contraction {
@@ -215,39 +212,39 @@ impl<A> SimplificationMethodAndOutput<A> {
                     .difference(&desired_uniques)
                     .cloned()
                     .collect(),
-                output_indices: new_indices.clone(),
+                output_indices: simplified_indices.clone(),
             },
             output_size: output_size.clone(),
         };
 
         let singleton_summary = SingletonSummary::new(&simplification_sc);
 
-        let method = match singleton_summary.get_strategy() {
-            SingletonMethod::Identity => {
-                let identity = Identity::new();
-                SingletonSimplificationMethod::View(Box::new(identity))
-            }
-            SingletonMethod::Permutation => {
-                let permutation = Permutation::new(&simplification_sc);
-                SingletonSimplificationMethod::View(Box::new(permutation))
-            }
+        let method: Option<Box<dyn SingletonContractor<A>>> = match singleton_summary.get_strategy()
+        {
+            SingletonMethod::Identity => None,
+            SingletonMethod::Permutation => None,
             SingletonMethod::Summation => {
                 let summation = Summation::new(&simplification_sc);
-                SingletonSimplificationMethod::Contraction(Box::new(summation))
+                Some(Box::new(summation))
             }
             SingletonMethod::Diagonalization => {
                 let diagonalization = Diagonalization::new(&simplification_sc);
-                SingletonSimplificationMethod::Contraction(Box::new(diagonalization))
+                Some(Box::new(diagonalization))
             }
             SingletonMethod::PermutationAndSummation => {
                 let permutation_and_summation = PermutationAndSummation::new(&simplification_sc);
-                SingletonSimplificationMethod::Contraction(Box::new(permutation_and_summation))
+                Some(Box::new(permutation_and_summation))
             }
             SingletonMethod::DiagonalizationAndSummation => {
                 let diagonalization_and_summation =
                     DiagonalizationAndSummation::new(&simplification_sc);
-                SingletonSimplificationMethod::Contraction(Box::new(diagonalization_and_summation))
+                Some(Box::new(diagonalization_and_summation))
             }
+        };
+        let new_indices = if method.is_some() {
+            simplified_indices
+        } else {
+            this_input_indices.to_vec()
         };
 
         SimplificationMethodAndOutput {
@@ -332,18 +329,6 @@ impl<A> PairContraction<A> {
                 let tensordotter = TensordotGeneral::new(&reduced_sc);
                 Box::new(tensordotter)
             }
-            // (_, _, 0, _, _, _, _) => {
-            //     let contractor = BroadcastProductGeneral::new(&sized_contraction);
-            //     contractor.contract_pair(lhs, rhs)
-            // }
-            // (_, _, 0, _, _, false, _) => {
-            //     let contractor = BroadcastProductGeneral::new(&sized_contraction);
-            //     contractor.contract_pair(lhs, rhs)
-            // }
-            // (_, _, 0, _, _, _, false) => {
-            //     let contractor = BroadcastProductGeneral::new(&sized_contraction);
-            //     contractor.contract_pair(lhs, rhs)
-            // }
             (_, _, _, _, _, _, _) => {
                 let contractor = StackedTensordotGeneral::new(&reduced_sc);
                 Box::new(contractor)
@@ -368,22 +353,18 @@ impl<A> PairContractor<A> for PairContraction<A> {
         'c: 'd,
         A: Clone + LinalgScalar,
     {
-        let contracted_lhs;
-        let reduced_lhs = match &self.lhs_simplification {
-            SingletonSimplificationMethod::Contraction(c) => {
-                contracted_lhs = c.contract_singleton(lhs);
-                contracted_lhs.view()
-            }
-            SingletonSimplificationMethod::View(v) => v.view_singleton(lhs),
-        };
-        let contracted_rhs;
-        let reduced_rhs = match &self.rhs_simplification {
-            SingletonSimplificationMethod::Contraction(c) => {
-                contracted_rhs = c.contract_singleton(rhs);
-                contracted_rhs.view()
-            }
-            SingletonSimplificationMethod::View(v) => v.view_singleton(rhs),
-        };
-        self.op.contract_pair(&reduced_lhs, &reduced_rhs)
+        match (&self.lhs_simplification, &self.rhs_simplification) {
+            (None, None) => self.op.contract_pair(lhs, rhs),
+            (Some(lhs_contraction), None) => self
+                .op
+                .contract_pair(&lhs_contraction.contract_singleton(lhs).view(), rhs),
+            (None, Some(rhs_contraction)) => self
+                .op
+                .contract_pair(lhs, &rhs_contraction.contract_singleton(rhs).view()),
+            (Some(lhs_contraction), Some(rhs_contraction)) => self.op.contract_pair(
+                &lhs_contraction.contract_singleton(lhs).view(),
+                &rhs_contraction.contract_singleton(rhs).view(),
+            ),
+        }
     }
 }

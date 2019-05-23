@@ -43,8 +43,9 @@ pub struct TensordotFixedPosition {
     output_shape: Vec<usize>,
 }
 
+#[allow(dead_code)]
 impl TensordotFixedPosition {
-    fn new(sc: &SizedContraction) -> Self {
+    pub fn new(sc: &SizedContraction) -> Self {
         assert_eq!(sc.contraction.operand_indices.len(), 2);
         let lhs_indices = &sc.contraction.operand_indices[0];
         let rhs_indices = &sc.contraction.operand_indices[1];
@@ -312,8 +313,9 @@ impl<A> PairContractor<A> for TensordotGeneral {
 #[derive(Clone, Debug)]
 pub struct HadamardProduct {}
 
+#[allow(dead_code)]
 impl HadamardProduct {
-    fn new(sc: &SizedContraction) -> Self {
+    pub fn new(sc: &SizedContraction) -> Self {
         assert_eq!(sc.contraction.operand_indices.len(), 2);
         let lhs_indices = &sc.contraction.operand_indices[0];
         let rhs_indices = &sc.contraction.operand_indices[1];
@@ -395,8 +397,9 @@ impl<A> PairContractor<A> for HadamardProductGeneral {
 #[derive(Clone, Debug)]
 pub struct ScalarMatrixProduct {}
 
+#[allow(dead_code)]
 impl ScalarMatrixProduct {
-    fn new(sc: &SizedContraction) -> Self {
+    pub fn new(sc: &SizedContraction) -> Self {
         assert_eq!(sc.contraction.operand_indices.len(), 2);
         let lhs_indices = &sc.contraction.operand_indices[0];
         let rhs_indices = &sc.contraction.operand_indices[1];
@@ -479,8 +482,9 @@ impl<A> PairContractor<A> for ScalarMatrixProductGeneral {
 #[derive(Clone, Debug)]
 pub struct MatrixScalarProduct {}
 
+#[allow(dead_code)]
 impl MatrixScalarProduct {
-    fn new(sc: &SizedContraction) -> Self {
+    pub fn new(sc: &SizedContraction) -> Self {
         assert_eq!(sc.contraction.operand_indices.len(), 2);
         let lhs_indices = &sc.contraction.operand_indices[0];
         let rhs_indices = &sc.contraction.operand_indices[1];
@@ -570,6 +574,7 @@ pub struct BroadcastProductGeneral {
     hadamard_product: HadamardProduct,
 }
 
+#[allow(dead_code)]
 impl BroadcastProductGeneral {
     pub fn new(sc: &SizedContraction) -> Self {
         assert_eq!(sc.contraction.operand_indices.len(), 2);
