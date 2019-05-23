@@ -219,7 +219,6 @@ impl<A> SimplificationMethodAndOutput<A> {
             },
             output_size: output_size.clone(),
         };
-        println!("simplification: {:?}", &simplification_sc);
 
         let singleton_summary = SingletonSummary::new(&simplification_sc);
 
@@ -271,14 +270,12 @@ impl<A> PairContraction<A> {
         let rhs_indices = &sc.contraction.operand_indices[1];
         let output_indices = &sc.contraction.output_indices;
 
-        println!("lhs:");
         let lhs_simplification_and_output = SimplificationMethodAndOutput::from_indices_and_sizes(
             &lhs_indices,
             &rhs_indices,
             &output_indices,
             &sc.output_size,
         );
-        println!("rhs:");
         let rhs_simplification_and_output = SimplificationMethodAndOutput::from_indices_and_sizes(
             &rhs_indices,
             &lhs_indices,
@@ -308,7 +305,6 @@ impl<A> PairContraction<A> {
             },
             output_size: sc.output_size.clone(),
         };
-        println!("reduced: {:?}", &reduced_sc);
         let cpc = generate_classified_pair_contraction(&reduced_sc);
 
         let op: Box<dyn PairContractor<A>> = match (

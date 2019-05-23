@@ -179,6 +179,5 @@ pub fn validate_and_size<A>(
     input_string: &str,
     operands: &[&dyn ArrayLike<A>],
 ) -> Result<SizedContraction, &'static str> {
-    println!("{}", input_string);
     validate_and_size_from_shapes(input_string, &get_operand_shapes(operands))
 }
