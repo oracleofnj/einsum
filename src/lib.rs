@@ -31,7 +31,7 @@ pub use optimizers::{
 
 mod contractors;
 use contractors::{
-    PairContraction, PairContractor, SingletonContraction, SingletonContractor, TensordotGeneral,
+    PairContractor, PathContraction, PathContractor, TensordotGeneral,
 };
 
 pub trait ArrayLike<A> {
@@ -48,64 +48,12 @@ where
     }
 }
 
-pub fn einsum_singleton<A: LinalgScalar>(
-    sized_contraction: &SizedContraction,
-    tensor: &ArrayViewD<A>,
-) -> ArrayD<A> {
-    let csc = SingletonContraction::new(&sized_contraction);
-    csc.contract_singleton(tensor)
-}
-
-fn einsum_pair<A: LinalgScalar>(
-    sized_contraction: &SizedContraction,
-    lhs: &ArrayViewD<A>,
-    rhs: &ArrayViewD<A>,
-) -> ArrayD<A> {
-    let cpc = PairContraction::new(&sized_contraction);
-    cpc.contract_pair(lhs, rhs)
-}
-
-pub fn einsum_path<A>(path: &EinsumPath, operands: &[&ArrayLike<A>]) -> ArrayD<A>
-where
-    A: LinalgScalar,
-{
-    let EinsumPath {
-        first_step:
-            FirstStep {
-                ref sized_contraction,
-                ref operand_nums,
-            },
-        ref remaining_steps,
-    } = path;
-
-    let mut result = match operand_nums {
-        None => einsum_singleton(sized_contraction, &(operands[0].into_dyn_view())),
-        Some(OperandNumPair { lhs, rhs }) => einsum_pair(
-            sized_contraction,
-            &(operands[*lhs].into_dyn_view()),
-            &(operands[*rhs].into_dyn_view()),
-        ),
-    };
-    for step in remaining_steps.iter() {
-        let IntermediateStep {
-            ref sized_contraction,
-            ref rhs_num,
-        } = step;
-        result = einsum_pair(
-            &sized_contraction,
-            &result.view(),
-            &(operands[*rhs_num].into_dyn_view()),
-        );
-    }
-    result
-}
-
 pub fn einsum_sc<A: LinalgScalar>(
     sized_contraction: &SizedContraction,
     operands: &[&ArrayLike<A>],
 ) -> ArrayD<A> {
-    let path = generate_optimized_path(sized_contraction, OptimizationMethod::Naive);
-    einsum_path(&path, operands)
+    let cpc = PathContraction::new(sized_contraction);
+    cpc.contract_path(operands)
 }
 
 pub fn einsum<A: LinalgScalar>(

@@ -1,25 +1,25 @@
 use crate::SizedContraction;
 use std::collections::HashSet;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OperandNumPair {
     pub lhs: usize,
     pub rhs: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FirstStep {
     pub sized_contraction: SizedContraction,
     pub operand_nums: Option<OperandNumPair>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IntermediateStep {
     pub sized_contraction: SizedContraction,
     pub rhs_num: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EinsumPath {
     pub first_step: FirstStep,
     pub remaining_steps: Vec<IntermediateStep>,

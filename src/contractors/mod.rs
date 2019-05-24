@@ -1,4 +1,8 @@
-use crate::SizedContraction;
+use crate::optimizers::{
+    generate_optimized_path, EinsumPath, FirstStep, IntermediateStep, OperandNumPair,
+    OptimizationMethod,
+};
+use crate::{ArrayLike, SizedContraction};
 use ndarray::prelude::*;
 use ndarray::LinalgScalar;
 use std::collections::HashSet;
@@ -59,6 +63,12 @@ pub trait PairContractor<A> {
         let result = self.contract_pair(lhs, rhs);
         out.assign(&result);
     }
+}
+
+pub trait PathContractor<A> {
+    fn contract_path(&self, operands: &[&dyn ArrayLike<A>]) -> ArrayD<A>
+    where
+        A: Clone + LinalgScalar;
 }
 
 pub struct SingletonContraction<A> {
@@ -276,6 +286,97 @@ impl<A> PairContractor<A> for PairContraction<A> {
                 &lhs_contraction.contract_singleton(lhs).view(),
                 &rhs_contraction.contract_singleton(rhs).view(),
             ),
+        }
+    }
+}
+
+pub enum PathContractionSteps<A> {
+    SingletonContraction(SingletonContraction<A>),
+    PairContractions(Vec<PairContraction<A>>),
+}
+
+pub struct PathContraction<A> {
+    pub path: EinsumPath,
+    pub steps: PathContractionSteps<A>,
+}
+
+impl<A> PathContraction<A> {
+    pub fn new(sc: &SizedContraction) -> Self {
+        let path = generate_optimized_path(&sc, OptimizationMethod::Naive);
+
+        PathContraction::from_path(&path)
+    }
+
+    pub fn from_path(path: &EinsumPath) -> Self {
+        let EinsumPath {
+            first_step:
+                FirstStep {
+                    ref sized_contraction,
+                    ref operand_nums,
+                },
+            ref remaining_steps,
+        } = path;
+
+        match operand_nums {
+            None => PathContraction {
+                path: path.clone(),
+                steps: PathContractionSteps::SingletonContraction(SingletonContraction::new(
+                    sized_contraction,
+                )),
+            },
+            Some(OperandNumPair { .. }) => {
+                let mut steps = Vec::new();
+                steps.push(PairContraction::new(sized_contraction));
+
+                for step in remaining_steps.iter() {
+                    steps.push(PairContraction::new(&step.sized_contraction));
+                }
+
+                PathContraction {
+                    path: path.clone(),
+                    steps: PathContractionSteps::PairContractions(steps),
+                }
+            }
+        }
+    }
+}
+
+impl<A> PathContractor<A> for PathContraction<A> {
+    fn contract_path(&self, operands: &[&dyn ArrayLike<A>]) -> ArrayD<A>
+    where
+        A: Clone + LinalgScalar,
+    {
+        let EinsumPath {
+            first_step:
+                FirstStep {
+                    ref operand_nums,
+                    ..
+                },
+            ref remaining_steps,
+        } = &self.path;
+
+        match &self.steps {
+            PathContractionSteps::SingletonContraction(c) => match operand_nums {
+                None => c.contract_singleton(&operands[0].into_dyn_view()),
+                Some(_) => panic!(),
+            },
+            PathContractionSteps::PairContractions(steps) => {
+                let mut result = match operand_nums {
+                    None => panic!(),
+                    Some(OperandNumPair { lhs, rhs }) => steps[0].contract_pair(
+                        &(operands[*lhs].into_dyn_view()),
+                        &(operands[*rhs].into_dyn_view()),
+                    ),
+                };
+                for (operand_step, pair_contraction_step) in
+                    remaining_steps.iter().zip(steps[1..].iter())
+                {
+                    let IntermediateStep { ref rhs_num, .. } = operand_step;
+                    result = pair_contraction_step
+                        .contract_pair(&result.view(), &(operands[*rhs_num].into_dyn_view()));
+                }
+                result
+            }
         }
     }
 }
