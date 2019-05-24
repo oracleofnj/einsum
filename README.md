@@ -21,6 +21,8 @@ fn main() {
 }
 ```
 
+## Better documentation to follow
+
 General algorithm description in semi-Rust pseudocode
 
 ```
