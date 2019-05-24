@@ -31,6 +31,15 @@ fn bench_multiply_tiny(b: &mut Bencher) {
 }
 
 #[bench]
+fn bench_multiply_tiny_reuse_path(b: &mut Bencher) {
+    let m1 = rand_array((3, 4));
+    let m2 = rand_array((4, 5));
+    let ep = einsum_path("ij,jk->ik", &[&m1, &m2], OptimizationMethod::Naive).unwrap();
+
+    b.iter(|| ep.contract_operands(&[&m1, &m2]));
+}
+
+#[bench]
 fn bench_multiply_builtin_medium(b: &mut Bencher) {
     let m1 = rand_array((30, 40));
     let m2 = rand_array((40, 50));
@@ -92,6 +101,15 @@ fn bench_hadamard_transpose_large(b: &mut Bencher) {
     let m2 = rand_array((400, 300));
 
     b.iter(|| einsum("ij,ji->ij", &[&m1, &m2]));
+}
+
+#[bench]
+fn bench_hadamard_transpose_large_reuse_path(b: &mut Bencher) {
+    let m1 = rand_array((300, 400));
+    let m2 = rand_array((400, 300));
+    let ep = einsum_path("ij,ji->ij", &[&m1, &m2], OptimizationMethod::Naive).unwrap();
+
+    b.iter(|| ep.contract_operands(&[&m1, &m2]));
 }
 
 #[bench]
