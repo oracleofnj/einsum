@@ -1,4 +1,4 @@
-use einsum::*;
+use ndarray_einsum_beta::*;
 use ndarray::prelude::*;
 use ndarray_rand::RandomExt;
 use rand::distributions::Uniform;
@@ -38,7 +38,7 @@ fn _test_parses() {
         "i,j->ijj",
     ] {
         println!("Input string: {}", test_string);
-        println!("{}", einsum::validate_as_json(test_string));
+        println!("{}", ndarray_einsum_beta::validate_as_json(test_string));
         println!("");
     }
 }
