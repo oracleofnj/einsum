@@ -34,8 +34,6 @@ use contractors::{
     PairContraction, PairContractor, SingletonContraction, SingletonContractor, TensordotGeneral,
 };
 
-mod classifiers;
-
 pub trait ArrayLike<A> {
     fn into_dyn_view(&self) -> ArrayView<A, IxDyn>;
 }

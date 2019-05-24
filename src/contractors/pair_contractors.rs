@@ -43,7 +43,6 @@ pub struct TensordotFixedPosition {
     output_shape: Vec<usize>,
 }
 
-#[allow(dead_code)]
 impl TensordotFixedPosition {
     pub fn new(sc: &SizedContraction) -> Self {
         assert_eq!(sc.contraction.operand_indices.len(), 2);
@@ -313,7 +312,6 @@ impl<A> PairContractor<A> for TensordotGeneral {
 #[derive(Clone, Debug)]
 pub struct HadamardProduct {}
 
-#[allow(dead_code)]
 impl HadamardProduct {
     pub fn new(sc: &SizedContraction) -> Self {
         assert_eq!(sc.contraction.operand_indices.len(), 2);
@@ -397,7 +395,6 @@ impl<A> PairContractor<A> for HadamardProductGeneral {
 #[derive(Clone, Debug)]
 pub struct ScalarMatrixProduct {}
 
-#[allow(dead_code)]
 impl ScalarMatrixProduct {
     pub fn new(sc: &SizedContraction) -> Self {
         assert_eq!(sc.contraction.operand_indices.len(), 2);
@@ -482,7 +479,6 @@ impl<A> PairContractor<A> for ScalarMatrixProductGeneral {
 #[derive(Clone, Debug)]
 pub struct MatrixScalarProduct {}
 
-#[allow(dead_code)]
 impl MatrixScalarProduct {
     pub fn new(sc: &SizedContraction) -> Self {
         assert_eq!(sc.contraction.operand_indices.len(), 2);
@@ -574,7 +570,6 @@ pub struct BroadcastProductGeneral {
     hadamard_product: HadamardProduct,
 }
 
-#[allow(dead_code)]
 impl BroadcastProductGeneral {
     pub fn new(sc: &SizedContraction) -> Self {
         assert_eq!(sc.contraction.operand_indices.len(), 2);

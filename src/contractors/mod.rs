@@ -1,8 +1,7 @@
-use crate::classifiers::generate_classified_pair_contraction;
 use crate::SizedContraction;
 use ndarray::prelude::*;
 use ndarray::LinalgScalar;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 mod singleton_contractors;
 use singleton_contractors::{
@@ -11,10 +10,15 @@ use singleton_contractors::{
 };
 
 mod pair_contractors;
-pub use pair_contractors::{
-    BroadcastProductGeneral, HadamardProductGeneral, MatrixScalarProductGeneral,
-    ScalarMatrixProductGeneral, StackedTensordotGeneral, TensordotFixedPosition, TensordotGeneral,
+pub use pair_contractors::TensordotGeneral;
+use pair_contractors::{
+    BroadcastProductGeneral, HadamardProduct, HadamardProductGeneral, MatrixScalarProduct,
+    MatrixScalarProductGeneral, ScalarMatrixProduct, ScalarMatrixProductGeneral,
+    StackedTensordotGeneral, TensordotFixedPosition,
 };
+
+mod strategies;
+use strategies::{PairMethod, PairSummary, SingletonMethod, SingletonSummary};
 
 pub trait SingletonViewer<A> {
     fn view_singleton<'a, 'b>(&self, tensor: &'b ArrayViewD<'a, A>) -> ArrayViewD<'b, A>
@@ -57,66 +61,6 @@ pub trait PairContractor<A> {
     }
 }
 
-struct SingletonSummary {
-    num_summed_axes: usize,
-    num_diagonalized_axes: usize,
-    num_reordered_axes: usize,
-}
-
-enum SingletonMethod {
-    Identity,
-    Permutation,
-    Summation,
-    Diagonalization,
-    PermutationAndSummation,
-    DiagonalizationAndSummation,
-}
-
-impl SingletonSummary {
-    fn new(sc: &SizedContraction) -> Self {
-        assert_eq!(sc.contraction.operand_indices.len(), 1);
-        let output_indices = &sc.contraction.output_indices;
-        let input_indices = &sc.contraction.operand_indices[0];
-
-        SingletonSummary::from_indices(&input_indices, &output_indices)
-    }
-
-    fn from_indices(input_indices: &[char], output_indices: &[char]) -> Self {
-        let mut input_counts = HashMap::new();
-        for &c in input_indices.iter() {
-            *input_counts.entry(c).or_insert(0) += 1;
-        }
-        let num_summed_axes = input_counts.len() - output_indices.len();
-        let num_diagonalized_axes = input_counts.iter().filter(|(_, &v)| v > 1).count();
-        let num_reordered_axes = output_indices
-            .iter()
-            .zip(input_indices.iter())
-            .filter(|(&output_char, &input_char)| output_char != input_char)
-            .count();
-
-        SingletonSummary {
-            num_summed_axes,
-            num_diagonalized_axes,
-            num_reordered_axes,
-        }
-    }
-
-    fn get_strategy(&self) -> SingletonMethod {
-        match (
-            self.num_summed_axes,
-            self.num_diagonalized_axes,
-            self.num_reordered_axes,
-        ) {
-            (0, 0, 0) => SingletonMethod::Identity,
-            (0, 0, _) => SingletonMethod::Permutation,
-            (_, 0, 0) => SingletonMethod::Summation,
-            (0, _, _) => SingletonMethod::Diagonalization,
-            (_, 0, _) => SingletonMethod::PermutationAndSummation,
-            (_, _, _) => SingletonMethod::DiagonalizationAndSummation,
-        }
-    }
-}
-
 pub struct SingletonContraction<A> {
     op: Box<dyn SingletonContractor<A>>,
 }
@@ -126,42 +70,24 @@ impl<A> SingletonContraction<A> {
         let singleton_summary = SingletonSummary::new(&sc);
 
         match singleton_summary.get_strategy() {
-            SingletonMethod::Identity => {
-                let identity = Identity::new();
-                SingletonContraction {
-                    op: Box::new(identity),
-                }
-            }
-            SingletonMethod::Permutation => {
-                let permutation = Permutation::new(sc);
-                SingletonContraction {
-                    op: Box::new(permutation),
-                }
-            }
-            SingletonMethod::Summation => {
-                let summation = Summation::new(sc);
-                SingletonContraction {
-                    op: Box::new(summation),
-                }
-            }
-            SingletonMethod::Diagonalization => {
-                let diagonalization = Diagonalization::new(sc);
-                SingletonContraction {
-                    op: Box::new(diagonalization),
-                }
-            }
-            SingletonMethod::PermutationAndSummation => {
-                let permutation_and_summation = PermutationAndSummation::new(sc);
-                SingletonContraction {
-                    op: Box::new(permutation_and_summation),
-                }
-            }
-            SingletonMethod::DiagonalizationAndSummation => {
-                let diagonalization_and_summation = DiagonalizationAndSummation::new(sc);
-                SingletonContraction {
-                    op: Box::new(diagonalization_and_summation),
-                }
-            }
+            SingletonMethod::Identity => SingletonContraction {
+                op: Box::new(Identity::new()),
+            },
+            SingletonMethod::Permutation => SingletonContraction {
+                op: Box::new(Permutation::new(sc)),
+            },
+            SingletonMethod::Summation => SingletonContraction {
+                op: Box::new(Summation::new(sc)),
+            },
+            SingletonMethod::Diagonalization => SingletonContraction {
+                op: Box::new(Diagonalization::new(sc)),
+            },
+            SingletonMethod::PermutationAndSummation => SingletonContraction {
+                op: Box::new(PermutationAndSummation::new(sc)),
+            },
+            SingletonMethod::DiagonalizationAndSummation => SingletonContraction {
+                op: Box::new(DiagonalizationAndSummation::new(sc)),
+            },
         }
     }
 }
@@ -258,57 +184,65 @@ impl<A> PairContraction<A> {
         let rhs_indices = &sc.contraction.operand_indices[1];
         let output_indices = &sc.contraction.output_indices;
 
-        let lhs_simplification_and_output = SimplificationMethodAndOutput::from_indices_and_sizes(
+        let SimplificationMethodAndOutput {
+            method: lhs_simplification,
+            new_indices: new_lhs_indices,
+        } = SimplificationMethodAndOutput::from_indices_and_sizes(
             &lhs_indices,
             &rhs_indices,
             &output_indices,
             sc,
         );
-        let rhs_simplification_and_output = SimplificationMethodAndOutput::from_indices_and_sizes(
+        let SimplificationMethodAndOutput {
+            method: rhs_simplification,
+            new_indices: new_rhs_indices,
+        } = SimplificationMethodAndOutput::from_indices_and_sizes(
             &rhs_indices,
             &lhs_indices,
             &output_indices,
             sc,
         );
-        let lhs_simplification = lhs_simplification_and_output.method;
-        let new_lhs_indices = lhs_simplification_and_output.new_indices;
-        let rhs_simplification = rhs_simplification_and_output.method;
-        let new_rhs_indices = rhs_simplification_and_output.new_indices;
 
         let reduced_sc = sc
             .subset(&[new_lhs_indices, new_rhs_indices], &output_indices)
             .unwrap();
 
-        let cpc = generate_classified_pair_contraction(&reduced_sc);
+        let pair_summary = PairSummary::new(&reduced_sc);
+        let pair_strategy = pair_summary.get_strategy();
 
-        let op: Box<dyn PairContractor<A>> = match (
-            cpc.stack_indices.len(),
-            cpc.outer_indices.len(),
-            cpc.contracted_indices.len(),
-            cpc.lhs_indices.len(),
-            cpc.rhs_indices.len(),
-            cpc.lhs_indices.len() > cpc.stack_indices.len(),
-            cpc.rhs_indices.len() > cpc.stack_indices.len(),
-        ) {
-            (_, 0, 0, _, _, _, _) => {
-                let hadamarder = HadamardProductGeneral::new(&reduced_sc);
-                Box::new(hadamarder)
+        let op: Box<dyn PairContractor<A>> = match pair_strategy {
+            PairMethod::HadamardProduct => {
+                // Never gets returned in current implementation
+                Box::new(HadamardProduct::new(&reduced_sc))
             }
-            (0, _, 0, 0, _, _, _) => {
-                let scalermatrixer = ScalarMatrixProductGeneral::new(&reduced_sc);
-                Box::new(scalermatrixer)
+            PairMethod::HadamardProductGeneral => {
+                Box::new(HadamardProductGeneral::new(&reduced_sc))
             }
-            (0, _, 0, _, 0, _, _) => {
-                let matrixscalerer = MatrixScalarProductGeneral::new(&reduced_sc);
-                Box::new(matrixscalerer)
+            PairMethod::ScalarMatrixProduct => {
+                // Never gets returned in current implementation
+                Box::new(ScalarMatrixProduct::new(&reduced_sc))
             }
-            (0, _, _, _, _, _, _) => {
-                let tensordotter = TensordotGeneral::new(&reduced_sc);
-                Box::new(tensordotter)
+            PairMethod::ScalarMatrixProductGeneral => {
+                Box::new(ScalarMatrixProductGeneral::new(&reduced_sc))
             }
-            (_, _, _, _, _, _, _) => {
-                let contractor = StackedTensordotGeneral::new(&reduced_sc);
-                Box::new(contractor)
+            PairMethod::MatrixScalarProduct => {
+                // Never gets returned in current implementation
+                Box::new(MatrixScalarProduct::new(&reduced_sc))
+            }
+            PairMethod::MatrixScalarProductGeneral => {
+                Box::new(MatrixScalarProductGeneral::new(&reduced_sc))
+            }
+            PairMethod::TensordotFixedPosition => {
+                // Never gets returned in current implementation
+                Box::new(TensordotFixedPosition::new(&reduced_sc))
+            }
+            PairMethod::TensordotGeneral => Box::new(TensordotGeneral::new(&reduced_sc)),
+            PairMethod::StackedTensordotGeneral => {
+                Box::new(StackedTensordotGeneral::new(&reduced_sc))
+            }
+            PairMethod::BroadcastProductGeneral => {
+                // Never gets returned in current implementation
+                Box::new(BroadcastProductGeneral::new(&reduced_sc))
             }
         };
         PairContraction {
