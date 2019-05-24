@@ -19,20 +19,18 @@ use ndarray::{Data, IxDyn, LinalgScalar};
 
 mod validation;
 pub use validation::{
-    validate, validate_and_size, validate_and_size_from_shapes, Contraction, OutputSize,
-    SizedContraction,
+    einsum_path, validate, validate_and_optimize_order, validate_and_size, validate_and_size_from_shapes,
+    Contraction, OutputSize, SizedContraction,
 };
 
 mod optimizers;
 pub use optimizers::{
-    generate_optimized_path, EinsumPath, FirstStep, IntermediateStep, OperandNumPair,
+    generate_optimized_order, ContractionOrder, FirstStep, IntermediateStep, OperandNumPair,
     OptimizationMethod,
 };
 
 mod contractors;
-use contractors::{
-    PairContractor, PathContraction, PathContractor, TensordotGeneral,
-};
+pub use contractors::{PairContractor, PathContraction, PathContractor, TensordotGeneral};
 
 pub trait ArrayLike<A> {
     fn into_dyn_view(&self) -> ArrayView<A, IxDyn>;
@@ -52,8 +50,7 @@ pub fn einsum_sc<A: LinalgScalar>(
     sized_contraction: &SizedContraction,
     operands: &[&ArrayLike<A>],
 ) -> ArrayD<A> {
-    let cpc = PathContraction::new(sized_contraction);
-    cpc.contract_path(operands)
+    sized_contraction.contract_operands(operands)
 }
 
 pub fn einsum<A: LinalgScalar>(

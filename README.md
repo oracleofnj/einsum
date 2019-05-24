@@ -16,12 +16,12 @@ IntermediateStep = {
   rhs: usize
 }
 
-Path = {
+ContractionOrder = {
   first_step: FirstStep,
   remaining_steps: Vec<IntermediateStep>,
 }
 
-path: Path = Optimize(&Contraction, &[OperandShapes]);
+path: ContractionOrder = Optimize(&Contraction, &[OperandShapes]);
 
 result: ArrayD<A> = einsum_path<A>(Path, &[&ArrayLike<A>]);
 

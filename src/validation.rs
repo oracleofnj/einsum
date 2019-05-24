@@ -1,5 +1,10 @@
-use crate::ArrayLike;
+use crate::{
+    generate_optimized_order, ArrayLike, ContractionOrder, OptimizationMethod, PathContraction,
+    PathContractor,
+};
 use lazy_static::lazy_static;
+use ndarray::prelude::*;
+use ndarray::LinalgScalar;
 use regex::Regex;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -100,6 +105,35 @@ impl SizedContraction {
             output_size: new_output_size,
         })
     }
+
+    pub fn from_contraction_and_shapes(
+        contraction: &Contraction,
+        operand_shapes: &[Vec<usize>],
+    ) -> Result<Self, &'static str> {
+        let output_size = get_output_size_from_shapes(&contraction, operand_shapes)?;
+
+        Ok(SizedContraction {
+            contraction: contraction.clone(),
+            output_size,
+        })
+    }
+
+    pub fn from_contraction_and_operands<A>(
+        contraction: &Contraction,
+        operands: &[&dyn ArrayLike<A>],
+    ) -> Result<Self, &'static str> {
+        let operand_shapes = get_operand_shapes(operands);
+
+        SizedContraction::from_contraction_and_shapes(contraction, &operand_shapes)
+    }
+
+    pub fn contract_operands<A: Clone + LinalgScalar>(
+        &self,
+        operands: &[&dyn ArrayLike<A>],
+    ) -> ArrayD<A> {
+        let cpc = PathContraction::new(&self);
+        cpc.contract_operands(operands)
+    }
 }
 
 fn generate_contraction(parse: &EinsumParse) -> Result<Contraction, &'static str> {
@@ -170,7 +204,7 @@ pub fn validate(input_string: &str) -> Result<Contraction, &'static str> {
 
 fn get_output_size_from_shapes(
     contraction: &Contraction,
-    operand_shapes: &Vec<Vec<usize>>,
+    operand_shapes: &[Vec<usize>],
 ) -> Result<OutputSize, &'static str> {
     // Check that len(operand_indices) == len(operands)
     if contraction.operand_indices.len() != operand_shapes.len() {
@@ -209,7 +243,7 @@ fn get_operand_shapes<A>(operands: &[&dyn ArrayLike<A>]) -> Vec<Vec<usize>> {
 
 pub fn validate_and_size_from_shapes(
     input_string: &str,
-    operand_shapes: &Vec<Vec<usize>>,
+    operand_shapes: &[Vec<usize>],
 ) -> Result<SizedContraction, &'static str> {
     let contraction = validate(input_string)?;
     let output_size = get_output_size_from_shapes(&contraction, operand_shapes)?;
@@ -225,4 +259,22 @@ pub fn validate_and_size<A>(
     operands: &[&dyn ArrayLike<A>],
 ) -> Result<SizedContraction, &'static str> {
     validate_and_size_from_shapes(input_string, &get_operand_shapes(operands))
+}
+
+pub fn validate_and_optimize_order<A>(
+    input_string: &str,
+    operands: &[&dyn ArrayLike<A>],
+    optimization_strategy: OptimizationMethod,
+) -> Result<ContractionOrder, &'static str> {
+    let sc = validate_and_size(input_string, operands)?;
+    Ok(generate_optimized_order(&sc, optimization_strategy))
+}
+
+pub fn einsum_path<A>(
+    input_string: &str,
+    operands: &[&dyn ArrayLike<A>],
+    optimization_strategy: OptimizationMethod,
+) -> Result<PathContraction<A>, &'static str> {
+    let contraction_order = validate_and_optimize_order(input_string, operands, optimization_strategy)?;
+    Ok(PathContraction::from_path(&contraction_order))
 }

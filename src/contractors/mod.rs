@@ -1,5 +1,5 @@
 use crate::optimizers::{
-    generate_optimized_path, EinsumPath, FirstStep, IntermediateStep, OperandNumPair,
+    generate_optimized_order, ContractionOrder, FirstStep, IntermediateStep, OperandNumPair,
     OptimizationMethod,
 };
 use crate::{ArrayLike, SizedContraction};
@@ -66,7 +66,7 @@ pub trait PairContractor<A> {
 }
 
 pub trait PathContractor<A> {
-    fn contract_path(&self, operands: &[&dyn ArrayLike<A>]) -> ArrayD<A>
+    fn contract_operands(&self, operands: &[&dyn ArrayLike<A>]) -> ArrayD<A>
     where
         A: Clone + LinalgScalar;
 }
@@ -296,30 +296,30 @@ pub enum PathContractionSteps<A> {
 }
 
 pub struct PathContraction<A> {
-    pub path: EinsumPath,
+    pub contraction_order: ContractionOrder,
     pub steps: PathContractionSteps<A>,
 }
 
 impl<A> PathContraction<A> {
     pub fn new(sc: &SizedContraction) -> Self {
-        let path = generate_optimized_path(&sc, OptimizationMethod::Naive);
+        let contraction_order = generate_optimized_order(&sc, OptimizationMethod::Naive);
 
-        PathContraction::from_path(&path)
+        PathContraction::from_path(&contraction_order)
     }
 
-    pub fn from_path(path: &EinsumPath) -> Self {
-        let EinsumPath {
+    pub fn from_path(contraction_order: &ContractionOrder) -> Self {
+        let ContractionOrder {
             first_step:
                 FirstStep {
                     ref sized_contraction,
                     ref operand_nums,
                 },
             ref remaining_steps,
-        } = path;
+        } = contraction_order;
 
         match operand_nums {
             None => PathContraction {
-                path: path.clone(),
+                contraction_order: contraction_order.clone(),
                 steps: PathContractionSteps::SingletonContraction(SingletonContraction::new(
                     sized_contraction,
                 )),
@@ -333,7 +333,7 @@ impl<A> PathContraction<A> {
                 }
 
                 PathContraction {
-                    path: path.clone(),
+                    contraction_order: contraction_order.clone(),
                     steps: PathContractionSteps::PairContractions(steps),
                 }
             }
@@ -342,18 +342,16 @@ impl<A> PathContraction<A> {
 }
 
 impl<A> PathContractor<A> for PathContraction<A> {
-    fn contract_path(&self, operands: &[&dyn ArrayLike<A>]) -> ArrayD<A>
+    fn contract_operands(&self, operands: &[&dyn ArrayLike<A>]) -> ArrayD<A>
     where
         A: Clone + LinalgScalar,
     {
-        let EinsumPath {
-            first_step:
-                FirstStep {
-                    ref operand_nums,
-                    ..
-                },
+        let ContractionOrder {
+            first_step: FirstStep {
+                ref operand_nums, ..
+            },
             ref remaining_steps,
-        } = &self.path;
+        } = &self.contraction_order;
 
         match &self.steps {
             PathContractionSteps::SingletonContraction(c) => match operand_nums {

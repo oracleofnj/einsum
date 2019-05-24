@@ -113,8 +113,8 @@ fn it_collapses_a_singleton_with_noncontiguous_strides() {
 
     let correct_answer = arr0(square.diag().sum());
 
-    let sc = validate_and_size("ii->", &[&square]).unwrap();
-    let collapsed = einsum_sc(&sc, &[&square]);
+    let ep = einsum_path("ii->", &[&square], OptimizationMethod::Naive).unwrap();
+    let collapsed = ep.contract_operands(&[&square]);
 
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
@@ -137,8 +137,8 @@ fn it_collapses_a_singleton_without_repeats() {
         }
     }
 
-    let sc = validate_and_size("ijkl->lij", &[&s]).unwrap();
-    let collapsed = einsum_sc(&sc, &[&s]);
+    let ep = einsum_path("ijkl->lij", &[&s], OptimizationMethod::Naive).unwrap();
+    let collapsed = ep.contract_operands(&[&s]);
 
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
@@ -157,8 +157,8 @@ fn it_diagonalizes_a_singleton() {
         }
     }
 
-    let sc = validate_and_size("jkiii->jik", &[&s]).unwrap();
-    let collapsed = einsum_sc(&sc, &[&s]);
+    let ep = einsum_path("jkiii->jik", &[&s], OptimizationMethod::Naive).unwrap();
+    let collapsed = ep.contract_operands(&[&s]);
 
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
@@ -177,8 +177,8 @@ fn it_collapses_a_singleton_with_multiple_repeats() {
         }
     }
 
-    let sc = validate_and_size("kjiji->ijk", &[&s]).unwrap();
-    let collapsed = einsum_sc(&sc, &[&s]);
+    let ep = einsum_path("kjiji->ijk", &[&s], OptimizationMethod::Naive).unwrap();
+    let collapsed = ep.contract_operands(&[&s]);
 
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
@@ -197,8 +197,8 @@ fn it_collapses_a_singleton_with_a_repeat_that_gets_summed() {
         correct_answer[j] = res;
     }
 
-    let sc = validate_and_size("iij->j", &[&s]).unwrap();
-    let collapsed = einsum_sc(&sc, &[&s]);
+    let ep = einsum_path("iij->j", &[&s], OptimizationMethod::Naive).unwrap();
+    let collapsed = ep.contract_operands(&[&s]);
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
 
@@ -218,8 +218,8 @@ fn it_collapses_a_singleton_with_multiple_repeats_that_get_summed() {
         correct_answer[j] = res;
     }
 
-    let sc = validate_and_size("iijkk->j", &[&s]).unwrap();
-    let collapsed = einsum_sc(&sc, &[&s]);
+    let ep = einsum_path("iijkk->j", &[&s], OptimizationMethod::Naive).unwrap();
+    let collapsed = ep.contract_operands(&[&s]);
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
 
@@ -230,8 +230,8 @@ fn it_sums_a_singleton() {
 
     let correct_answer = arr0(s.sum());
 
-    let sc = validate_and_size("ijk->", &[&s]).unwrap();
-    let collapsed = einsum_sc(&sc, &[&s]);
+    let ep = einsum_path("ijk->", &[&s], OptimizationMethod::Naive).unwrap();
+    let collapsed = ep.contract_operands(&[&s]);
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
 
@@ -251,8 +251,8 @@ fn it_collapses_a_singleton_with_multiple_sums() {
         correct_answer[k] = res;
     }
 
-    let sc = validate_and_size("ijk->k", &[&s]).unwrap();
-    let collapsed = einsum_sc(&sc, &[&s]);
+    let ep = einsum_path("ijk->k", &[&s], OptimizationMethod::Naive).unwrap();
+    let collapsed = ep.contract_operands(&[&s]);
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
 
@@ -274,8 +274,8 @@ fn it_collapses_a_singleton() {
         }
     }
 
-    let sc = validate_and_size("iijkl->lij", &[&s]).unwrap();
-    let collapsed = einsum_sc(&sc, &[&s]);
+    let ep = einsum_path("iijkl->lij", &[&s], OptimizationMethod::Naive).unwrap();
+    let collapsed = ep.contract_operands(&[&s]);
 
     assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
 }
@@ -313,8 +313,8 @@ fn deduped_handles_dot_product() {
     let rhs = rand_array((3,));
 
     let correct_answer = arr0(lhs.dot(&rhs));
-    let sc = validate_and_size("i,i->", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("i,i->", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -324,8 +324,8 @@ fn deduped_handles_hadamard_product() {
     let rhs = rand_array((3,));
 
     let correct_answer = (&lhs * &rhs).into_dyn();
-    let sc = validate_and_size("i,i->i", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("i,i->i", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -341,8 +341,8 @@ fn deduped_handles_outer_product_vec_vec() {
         }
     }
 
-    let sc = validate_and_size("i,j->ij", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("i,j->ij", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -360,8 +360,8 @@ fn deduped_handles_matrix_vector_1() {
         correct_answer[i] = res;
     }
 
-    let sc = validate_and_size("ij,j->i", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("ij,j->i", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
     assert!(correct_answer.all_close(&(lhs.dot(&rhs)), TOL));
 }
@@ -380,8 +380,8 @@ fn deduped_handles_matrix_vector_2() {
         correct_answer[j] = res;
     }
 
-    let sc = validate_and_size("i,ij->j", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("i,ij->j", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
     assert!(correct_answer.all_close(&(lhs.dot(&rhs)), TOL));
 }
@@ -400,8 +400,8 @@ fn deduped_handles_matrix_vector_3() {
         correct_answer[j] = res;
     }
 
-    let sc = validate_and_size("ij,i->j", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("ij,i->j", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
     assert!(correct_answer.all_close(&(rhs.dot(&lhs)), TOL));
 }
@@ -420,8 +420,8 @@ fn deduped_handles_matrix_vector_4() {
         correct_answer[i] = res;
     }
 
-    let sc = validate_and_size("j,ij->i", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("j,ij->i", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
     assert!(correct_answer.all_close(&(rhs.dot(&lhs)), TOL));
 }
@@ -438,8 +438,8 @@ fn deduped_handles_stacked_scalar_vector_product_1() {
         }
     }
 
-    let sc = validate_and_size("ij,i->ij", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("ij,i->ij", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -455,8 +455,8 @@ fn deduped_handles_stacked_scalar_vector_product_2() {
         }
     }
 
-    let sc = validate_and_size("ij,i->ji", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("ij,i->ji", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -472,8 +472,8 @@ fn deduped_handles_stacked_scalar_vector_product_3() {
         }
     }
 
-    let sc = validate_and_size("i,ji->ij", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("i,ji->ij", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -484,8 +484,8 @@ fn deduped_handles_summed_hadamard_product_aka_stacked_1d_tensordot_1() {
 
     let correct_answer = (&lhs * &rhs).sum_axis(Axis(1));
 
-    let sc = validate_and_size("ij,ij->i", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("ij,ij->i", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -496,8 +496,8 @@ fn deduped_handles_summed_hadamard_product_aka_stacked_1d_tensordot_2() {
 
     let correct_answer = (&lhs * &rhs.t()).sum_axis(Axis(1));
 
-    let sc = validate_and_size("ij,ji->i", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("ij,ji->i", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -508,8 +508,8 @@ fn deduped_handles_summed_hadamard_product_aka_stacked_1d_tensordot_3() {
 
     let correct_answer = (&lhs * &rhs.t()).sum_axis(Axis(0));
 
-    let sc = validate_and_size("ji,ij->i", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("ji,ij->i", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -529,8 +529,8 @@ fn deduped_handles_summed_hadamard_product_multiple_stacked_axes() {
         }
     }
 
-    let sc = validate_and_size("ijkl,jlki->kji", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("ijkl,jlki->kji", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -541,8 +541,8 @@ fn deduped_handles_2d_hadamard_product() {
 
     let correct_answer = (&lhs * &rhs).into_dyn();
 
-    let sc = validate_and_size("ij,ij->ij", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("ij,ij->ij", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -554,8 +554,8 @@ fn deduped_handles_2d_hadamard_product_2() {
     let correct_answer_t = (&lhs * &rhs).into_dyn();
     let correct_answer = correct_answer_t.t();
 
-    let sc = validate_and_size("ij,ij->ji", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("ij,ij->ji", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -566,8 +566,8 @@ fn deduped_handles_2d_hadamard_product_3() {
 
     let correct_answer = (&lhs.t() * &rhs).into_dyn();
 
-    let sc = validate_and_size("ji,ij->ij", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("ji,ij->ij", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -577,8 +577,8 @@ fn deduped_handles_double_dot_product_mat_mat() {
     let rhs = rand_array((2, 3));
 
     let correct_answer = arr0((&lhs * &rhs).sum());
-    let sc = validate_and_size("ij,ij->", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("ij,ij->", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -595,8 +595,8 @@ fn deduped_handles_outer_product_vect_mat_1() {
             }
         }
     }
-    let sc = validate_and_size("ij,k->kij", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("ij,k->kij", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -613,8 +613,8 @@ fn deduped_handles_outer_product_vect_mat_2() {
             }
         }
     }
-    let sc = validate_and_size("k,ij->kij", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("k,ij->kij", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -633,8 +633,8 @@ fn deduped_handles_outer_product_mat_mat() {
             }
         }
     }
-    let sc = validate_and_size("lk,ij->kilj", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("lk,ij->kilj", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -644,8 +644,8 @@ fn deduped_handles_matrix_product_1() {
     let rhs = rand_array((3, 4));
 
     let correct_answer = lhs.dot(&rhs);
-    let sc = validate_and_size("ij,jk", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("ij,jk", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -655,8 +655,8 @@ fn deduped_handles_matrix_product_2() {
     let rhs = rand_array((4, 3));
 
     let correct_answer = lhs.dot(&rhs.t());
-    let sc = validate_and_size("ij,kj", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("ij,kj", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -674,8 +674,8 @@ fn deduped_handles_stacked_outer_product_1() {
         }
     }
 
-    let sc = validate_and_size("ij,ki->ijk", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("ij,ki->ijk", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -689,8 +689,8 @@ fn diagonals_product() {
         correct_answer[[i]] = lhs[[i, i]] * rhs[[i, i]];
     }
 
-    let sc = validate_and_size("ii,ii->i", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("ii,ii->i", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -704,8 +704,8 @@ fn diagonals_product_lhs() {
         correct_answer[[i]] = lhs[[i, i]] * rhs[[i]];
     }
 
-    let sc = validate_and_size("ii,i->i", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("ii,i->i", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -719,8 +719,8 @@ fn diagonals_product_rhs() {
         correct_answer[[i]] = lhs[[i]] * rhs[[i, i]];
     }
 
-    let sc = validate_and_size("i,ii->i", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("i,ii->i", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -736,8 +736,8 @@ fn presum_lhs() {
         }
     }
 
-    let sc = validate_and_size("ij,ii->i", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("ij,ii->i", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -758,8 +758,8 @@ fn it_tolerates_permuted_axes() {
         }
     }
 
-    let sc = validate_and_size("ijk,jkl->il", &[&lhs, &rhs]).unwrap();
-    let dotted = einsum_sc(&sc, &[&lhs, &rhs]);
+    let ep = einsum_path("ijk,jkl->il", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -780,8 +780,8 @@ fn it_contracts_three_matrices() {
         }
     }
 
-    let sc = validate_and_size("ij,jk,kl->il", &[&op1, &op2, &op3]).unwrap();
-    let dotted = einsum_sc(&sc, &[&op1, &op2, &op3]);
+    let ep = einsum_path("ij,jk,kl->il", &[&op1, &op2, &op3], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&op1, &op2, &op3]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -807,8 +807,8 @@ fn it_contracts_three_matrices_with_repeats_1() {
         }
     }
 
-    let sc = validate_and_size("ij,jmmnk,kl->il", &[&op1, &op2, &op3]).unwrap();
-    let dotted = einsum_sc(&sc, &[&op1, &op2, &op3]);
+    let ep = einsum_path("ij,jmmnk,kl->il", &[&op1, &op2, &op3], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&op1, &op2, &op3]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -834,8 +834,8 @@ fn it_contracts_three_matrices_with_repeats_2() {
         }
     }
 
-    let sc = validate_and_size("immnj,jk,kml->il", &[&op1, &op2, &op3]).unwrap();
-    let dotted = einsum_sc(&sc, &[&op1, &op2, &op3]);
+    let ep = einsum_path("immnj,jk,kml->il", &[&op1, &op2, &op3], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&op1, &op2, &op3]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -861,8 +861,8 @@ fn it_contracts_three_matrices_with_repeats_3() {
         }
     }
 
-    let sc = validate_and_size("immnj,jk,kl->mil", &[&op1, &op2, &op3]).unwrap();
-    let dotted = einsum_sc(&sc, &[&op1, &op2, &op3]);
+    let ep = einsum_path("immnj,jk,kl->mil", &[&op1, &op2, &op3], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&op1, &op2, &op3]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
 
@@ -887,7 +887,7 @@ fn it_contracts_four_matrices() {
         }
     }
 
-    let sc = validate_and_size("ij,jk,kl,lm->il", &[&op1, &op2, &op3, &op4]).unwrap();
-    let dotted = einsum_sc(&sc, &[&op1, &op2, &op3, &op4]);
+    let ep = einsum_path("ij,jk,kl,lm->il", &[&op1, &op2, &op3, &op4], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&op1, &op2, &op3, &op4]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }

@@ -20,7 +20,7 @@ pub struct IntermediateStep {
 }
 
 #[derive(Debug, Clone)]
-pub struct EinsumPath {
+pub struct ContractionOrder {
     pub first_step: FirstStep,
     pub remaining_steps: Vec<IntermediateStep>,
 }
@@ -90,7 +90,7 @@ fn generate_sized_contraction_pair(
         .unwrap()
 }
 
-fn generate_path(sized_contraction: &SizedContraction, tensor_order: &[usize]) -> EinsumPath {
+fn generate_path(sized_contraction: &SizedContraction, tensor_order: &[usize]) -> ContractionOrder {
     // Generate the actual path consisting of all the mini-contractions.
 
     // Make a reordered full SizedContraction in the order specified by the called
@@ -104,7 +104,7 @@ fn generate_path(sized_contraction: &SizedContraction, tensor_order: &[usize]) -
                 sized_contraction: permuted_contraction.clone(),
                 operand_nums: None,
             };
-            EinsumPath {
+            ContractionOrder {
                 first_step,
                 remaining_steps: Vec::new(),
             }
@@ -125,7 +125,7 @@ fn generate_path(sized_contraction: &SizedContraction, tensor_order: &[usize]) -
                     rhs: tensor_order[1],
                 }),
             };
-            EinsumPath {
+            ContractionOrder {
                 first_step,
                 remaining_steps: Vec::new(),
             }
@@ -228,7 +228,7 @@ fn generate_path(sized_contraction: &SizedContraction, tensor_order: &[usize]) -
             match optional_first_step {
                 // Shouldn't be possible to still be None since this
                 // gets set on the first pass through the loop.
-                Some(first_step) => EinsumPath {
+                Some(first_step) => ContractionOrder {
                     first_step,
                     remaining_steps,
                 },
@@ -249,10 +249,10 @@ fn reverse_order(sized_contraction: &SizedContraction) -> Vec<usize> {
 }
 
 // TODO: Maybe this should take a function pointer from &SizedContraction -> Vec<usize>?
-pub fn generate_optimized_path(
+pub fn generate_optimized_order(
     sized_contraction: &SizedContraction,
     strategy: OptimizationMethod,
-) -> EinsumPath {
+) -> ContractionOrder {
     let tensor_order = match strategy {
         OptimizationMethod::Naive => naive_order(sized_contraction),
         OptimizationMethod::Reverse => reverse_order(sized_contraction),
