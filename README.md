@@ -1,5 +1,26 @@
 # Einsum (Einstein Summation) for [Rust ndarray](https://docs.rs/ndarray/)
 
+## Minimal example
+
+Cargo.toml:
+
+```
+ndarray_einsum_beta = "0.1.0"
+```
+
+src/main.rs:
+
+```
+use ndarray::prelude::*;
+use ndarray_einsum_beta::*;
+
+fn main() {
+    let m1 = arr1(&[1, 2]);
+    let m2 = arr2(&[[1, 2], [3, 4]]);
+    println!("{:?}", einsum("i,ij->j", &[&m1, &m2]));
+}
+```
+
 General algorithm description in semi-Rust pseudocode
 
 ```
