@@ -5,7 +5,7 @@ use std::collections::HashSet;
 pub enum OperandNumber {
     // Is the input one of the arguments or one of the intermediate results?
     Input(usize),
-    IntermediateResult(usize)
+    IntermediateResult(usize),
 }
 
 #[derive(Debug, Clone)]
@@ -93,6 +93,9 @@ fn generate_sized_contraction_pair(
 
 fn generate_path(sized_contraction: &SizedContraction, tensor_order: &[usize]) -> ContractionOrder {
     // Generate the actual path consisting of all the mini-contractions.
+    //
+    // TODO: Take a &[OperandNumPair] instead of &[usize]
+    // and Keep track of the intermediate results
 
     // Make a reordered full SizedContraction in the order specified by the called
     let permuted_contraction = generate_permuted_contraction(sized_contraction, tensor_order);
@@ -205,12 +208,12 @@ fn generate_path(sized_contraction: &SizedContraction, tensor_order: &[usize]) -
                 } else {
                     OperandNumPair {
                         lhs: OperandNumber::IntermediateResult(idx_of_lhs - 1),
-                        rhs: OperandNumber::Input(tensor_order[idx_of_rhs])
+                        rhs: OperandNumber::Input(tensor_order[idx_of_rhs]),
                     }
                 };
                 steps.push(Pair {
                     sized_contraction: sc,
-                    operand_nums
+                    operand_nums,
                 });
             }
 
