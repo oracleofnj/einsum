@@ -2,27 +2,28 @@ use crate::SizedContraction;
 use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
+pub enum OperandNumber {
+    // Is the input one of the arguments or one of the intermediate results?
+    Input(usize),
+    IntermediateResult(usize),
+}
+
+#[derive(Debug, Clone)]
 pub struct OperandNumPair {
-    pub lhs: usize,
-    pub rhs: usize,
+    pub lhs: OperandNumber,
+    pub rhs: OperandNumber,
 }
 
 #[derive(Debug, Clone)]
-pub struct FirstStep {
+pub struct Pair {
     pub sized_contraction: SizedContraction,
-    pub operand_nums: Option<OperandNumPair>,
+    pub operand_nums: OperandNumPair,
 }
 
 #[derive(Debug, Clone)]
-pub struct IntermediateStep {
-    pub sized_contraction: SizedContraction,
-    pub rhs_num: usize,
-}
-
-#[derive(Debug, Clone)]
-pub struct ContractionOrder {
-    pub first_step: FirstStep,
-    pub remaining_steps: Vec<IntermediateStep>,
+pub enum ContractionOrder {
+    Singleton(SizedContraction),
+    Pairs(Vec<Pair>),
 }
 
 #[derive(Debug)]
@@ -92,6 +93,9 @@ fn generate_sized_contraction_pair(
 
 fn generate_path(sized_contraction: &SizedContraction, tensor_order: &[usize]) -> ContractionOrder {
     // Generate the actual path consisting of all the mini-contractions.
+    //
+    // TODO: Take a &[OperandNumPair] instead of &[usize]
+    // and Keep track of the intermediate results
 
     // Make a reordered full SizedContraction in the order specified by the called
     let permuted_contraction = generate_permuted_contraction(sized_contraction, tensor_order);
@@ -100,14 +104,7 @@ fn generate_path(sized_contraction: &SizedContraction, tensor_order: &[usize]) -
         1 => {
             // If there's only one input tensor, make a single-step path consisting of a
             // singleton contraction (operand_nums = None).
-            let first_step = FirstStep {
-                sized_contraction: permuted_contraction.clone(),
-                operand_nums: None,
-            };
-            ContractionOrder {
-                first_step,
-                remaining_steps: Vec::new(),
-            }
+            ContractionOrder::Singleton(permuted_contraction.clone())
         }
         2 => {
             // If there's exactly two input tensors, make a single-step path consisting
@@ -118,26 +115,20 @@ fn generate_path(sized_contraction: &SizedContraction, tensor_order: &[usize]) -
                 &permuted_contraction.contraction.output_indices,
                 &permuted_contraction,
             );
-            let first_step = FirstStep {
-                sized_contraction: sc,
-                operand_nums: Some(OperandNumPair {
-                    lhs: tensor_order[0],
-                    rhs: tensor_order[1],
-                }),
+            let operand_num_pair = OperandNumPair {
+                lhs: OperandNumber::Input(tensor_order[0]),
+                rhs: OperandNumber::Input(tensor_order[1]),
             };
-            ContractionOrder {
-                first_step,
-                remaining_steps: Vec::new(),
-            }
+            let only_step = Pair {
+                sized_contraction: sc,
+                operand_nums: operand_num_pair,
+            };
+            ContractionOrder::Pairs(vec![only_step])
         }
         _ => {
             // If there's three or more input tensors, we have some work to do.
 
-            // optional_first_step gets set on the first iteration of the loop;
-            // making it an Option is to prevent compiler from complaining
-            // about possibly uninitialized value
-            let mut optional_first_step = None;
-            let mut remaining_steps = Vec::new();
+            let mut steps = Vec::new();
             // In the main body of the loop, output_indices will contain the result of the prior pair
             // contraction. Initialize it to the elements of the first LHS tensor so that we can
             // clone it on the first go-around as well as all the later ones.
@@ -209,31 +200,24 @@ fn generate_path(sized_contraction: &SizedContraction, tensor_order: &[usize]) -
                     &permuted_contraction,
                 );
 
-                if idx_of_lhs == 0 {
-                    optional_first_step = Some(FirstStep {
-                        sized_contraction: sc,
-                        operand_nums: Some(OperandNumPair {
-                            lhs: tensor_order[idx_of_lhs], // tensor_order[0]
-                            rhs: tensor_order[idx_of_rhs], // tensor_order[1]
-                        }),
-                    });
+                let operand_nums = if idx_of_lhs == 0 {
+                    OperandNumPair {
+                        lhs: OperandNumber::Input(tensor_order[idx_of_lhs]), // tensor_order[0]
+                        rhs: OperandNumber::Input(tensor_order[idx_of_rhs]), // tensor_order[1]
+                    }
                 } else {
-                    remaining_steps.push(IntermediateStep {
-                        sized_contraction: sc,
-                        rhs_num: tensor_order[idx_of_rhs],
-                    });
-                }
+                    OperandNumPair {
+                        lhs: OperandNumber::IntermediateResult(idx_of_lhs - 1),
+                        rhs: OperandNumber::Input(tensor_order[idx_of_rhs]),
+                    }
+                };
+                steps.push(Pair {
+                    sized_contraction: sc,
+                    operand_nums,
+                });
             }
 
-            match optional_first_step {
-                // Shouldn't be possible to still be None since this
-                // gets set on the first pass through the loop.
-                Some(first_step) => ContractionOrder {
-                    first_step,
-                    remaining_steps,
-                },
-                None => panic!(),
-            }
+            ContractionOrder::Pairs(steps)
         }
     }
 }

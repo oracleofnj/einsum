@@ -275,6 +275,7 @@ pub fn einsum_path<A>(
     operands: &[&dyn ArrayLike<A>],
     optimization_strategy: OptimizationMethod,
 ) -> Result<PathContraction<A>, &'static str> {
-    let contraction_order = validate_and_optimize_order(input_string, operands, optimization_strategy)?;
+    let contraction_order =
+        validate_and_optimize_order(input_string, operands, optimization_strategy)?;
     Ok(PathContraction::from_path(&contraction_order))
 }

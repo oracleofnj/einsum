@@ -25,7 +25,7 @@ pub use validation::{
 
 mod optimizers;
 pub use optimizers::{
-    generate_optimized_order, ContractionOrder, FirstStep, IntermediateStep, OperandNumPair,
+    generate_optimized_order, ContractionOrder, OperandNumPair,
     OptimizationMethod,
 };
 
