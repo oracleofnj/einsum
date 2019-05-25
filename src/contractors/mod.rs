@@ -1,6 +1,5 @@
 use crate::optimizers::{
-    generate_optimized_order, ContractionOrder, FirstStep, IntermediateStep, OperandNumPair,
-    OptimizationMethod,
+    generate_optimized_order, ContractionOrder, OperandNumber, OptimizationMethod,
 };
 use crate::{ArrayLike, SizedContraction};
 use ndarray::prelude::*;
@@ -308,27 +307,17 @@ impl<A> PathContraction<A> {
     }
 
     pub fn from_path(contraction_order: &ContractionOrder) -> Self {
-        let ContractionOrder {
-            first_step:
-                FirstStep {
-                    ref sized_contraction,
-                    ref operand_nums,
-                },
-            ref remaining_steps,
-        } = contraction_order;
-
-        match operand_nums {
-            None => PathContraction {
+        match contraction_order {
+            ContractionOrder::Singleton(sized_contraction) => PathContraction {
                 contraction_order: contraction_order.clone(),
                 steps: PathContractionSteps::SingletonContraction(SingletonContraction::new(
                     sized_contraction,
                 )),
             },
-            Some(OperandNumPair { .. }) => {
+            ContractionOrder::Pairs(order_steps) => {
                 let mut steps = Vec::new();
-                steps.push(PairContraction::new(sized_contraction));
 
-                for step in remaining_steps.iter() {
+                for step in order_steps.iter() {
                     steps.push(PairContraction::new(&step.sized_contraction));
                 }
 
@@ -346,35 +335,31 @@ impl<A> PathContractor<A> for PathContraction<A> {
     where
         A: Clone + LinalgScalar,
     {
-        let ContractionOrder {
-            first_step: FirstStep {
-                ref operand_nums, ..
-            },
-            ref remaining_steps,
-        } = &self.contraction_order;
-
-        match &self.steps {
-            PathContractionSteps::SingletonContraction(c) => match operand_nums {
-                None => c.contract_singleton(&operands[0].into_dyn_view()),
-                Some(_) => panic!(),
-            },
-            PathContractionSteps::PairContractions(steps) => {
-                let mut result = match operand_nums {
-                    None => panic!(),
-                    Some(OperandNumPair { lhs, rhs }) => steps[0].contract_pair(
-                        &(operands[*lhs].into_dyn_view()),
-                        &(operands[*rhs].into_dyn_view()),
-                    ),
-                };
-                for (operand_step, pair_contraction_step) in
-                    remaining_steps.iter().zip(steps[1..].iter())
-                {
-                    let IntermediateStep { ref rhs_num, .. } = operand_step;
-                    result = pair_contraction_step
-                        .contract_pair(&result.view(), &(operands[*rhs_num].into_dyn_view()));
-                }
-                result
+        match (&self.steps, &self.contraction_order) {
+            (PathContractionSteps::SingletonContraction(c), ContractionOrder::Singleton(_)) => {
+                c.contract_singleton(&operands[0].into_dyn_view())
             }
+            (
+                PathContractionSteps::PairContractions(steps),
+                ContractionOrder::Pairs(order_steps),
+            ) => {
+                let mut intermediate_results: Vec<ArrayD<A>> = Vec::new();
+                for (step, order_step) in steps.iter().zip(order_steps.iter()) {
+                    let lhs = match order_step.operand_nums.lhs {
+                        OperandNumber::Input(pos) => operands[pos].into_dyn_view(),
+                        OperandNumber::IntermediateResult(pos) => intermediate_results[pos].view(),
+                    };
+                    let rhs = match order_step.operand_nums.rhs {
+                        OperandNumber::Input(pos) => operands[pos].into_dyn_view(),
+                        OperandNumber::IntermediateResult(pos) => intermediate_results[pos].view(),
+                    };
+                    let intermediate_result = step.contract_pair(&lhs, &rhs);
+                    // let lhs = match order_step.
+                    intermediate_results.push(intermediate_result);
+                }
+                intermediate_results.pop().unwrap()
+            }
+            _ => panic!(), // steps and contraction_order don't match
         }
     }
 }
