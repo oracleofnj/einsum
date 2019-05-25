@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use crate::optimizers::{
     generate_optimized_order, ContractionOrder, OperandNumber, OptimizationMethod,
 };
@@ -23,21 +24,21 @@ use pair_contractors::{
 mod strategies;
 use strategies::{PairMethod, PairSummary, SingletonMethod, SingletonSummary};
 
-pub trait SingletonViewer<A> {
+pub trait SingletonViewer<A>: Debug {
     fn view_singleton<'a, 'b>(&self, tensor: &'b ArrayViewD<'a, A>) -> ArrayViewD<'b, A>
     where
         'a: 'b,
         A: Clone + LinalgScalar;
 }
 
-pub trait SingletonContractor<A> {
+pub trait SingletonContractor<A>: Debug {
     fn contract_singleton<'a, 'b>(&self, tensor: &'b ArrayViewD<'a, A>) -> ArrayD<A>
     where
         'a: 'b,
         A: Clone + LinalgScalar;
 }
 
-pub trait PairContractor<A> {
+pub trait PairContractor<A>: Debug {
     fn contract_pair<'a, 'b, 'c, 'd>(
         &self,
         lhs: &'b ArrayViewD<'a, A>,
@@ -64,7 +65,7 @@ pub trait PairContractor<A> {
     }
 }
 
-pub trait PathContractor<A> {
+pub trait PathContractor<A>: Debug {
     fn contract_operands(&self, operands: &[&dyn ArrayLike<A>]) -> ArrayD<A>
     where
         A: Clone + LinalgScalar;
@@ -108,6 +109,12 @@ impl<A> SingletonContractor<A> for SingletonContraction<A> {
         A: Clone + LinalgScalar,
     {
         self.op.contract_singleton(tensor)
+    }
+}
+
+impl<A> Debug for SingletonContraction<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "op: {:?}", self.op)
     }
 }
 
@@ -176,6 +183,15 @@ impl<A> SimplificationMethodAndOutput<A> {
         SimplificationMethodAndOutput {
             method,
             new_indices,
+        }
+    }
+}
+
+impl<A> Debug for SimplificationMethodAndOutput<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match &self.method {
+            Some(_) => write!(f, "method: Some({:?}), new_indices: {:?}", &self.method, &self.new_indices),
+            None => write!(f, "None")
         }
     }
 }
@@ -289,6 +305,12 @@ impl<A> PairContractor<A> for PairContraction<A> {
     }
 }
 
+impl<A> Debug for PairContraction<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "lhs_simplification: {:?}, rhs_simplification: {:?}, op: {:?}", self.lhs_simplification, self.rhs_simplification, self.op)
+    }
+}
+
 pub enum PathContractionSteps<A> {
     SingletonContraction(SingletonContraction<A>),
     PairContractions(Vec<PairContraction<A>>),
@@ -335,6 +357,8 @@ impl<A> PathContractor<A> for PathContraction<A> {
     where
         A: Clone + LinalgScalar,
     {
+        // Uncomment for help debugging
+        // println!("{:?}", self);
         match (&self.steps, &self.contraction_order) {
             (PathContractionSteps::SingletonContraction(c), ContractionOrder::Singleton(_)) => {
                 c.contract_singleton(&operands[0].into_dyn_view())
@@ -360,6 +384,15 @@ impl<A> PathContractor<A> for PathContraction<A> {
                 intermediate_results.pop().unwrap()
             }
             _ => panic!(), // steps and contraction_order don't match
+        }
+    }
+}
+
+impl<A> Debug for PathContraction<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match &self.steps {
+            PathContractionSteps::SingletonContraction(step) => write!(f, "only_step: {:?}", step),
+            PathContractionSteps::PairContractions(steps) => write!(f, "steps: {:?}", steps)
         }
     }
 }
