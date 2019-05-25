@@ -112,7 +112,7 @@ dependencies = [
 
 [[package]]
 name = "ndarray_einsum_beta"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "lazy_static 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "ndarray 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)",

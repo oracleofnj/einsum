@@ -12,6 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! The `ndarray_einsum` crate implements the `einsum` function, originally
+//! implemented for numpy by Mark Wiebe and subsequently reimplemented for
+//! other tensor libraries such as Tensorflow and PyTorch. einsum (Einstein summation)
+//! implements general multidimensional tensor contraction. Many linear algebra operations
+//! and generalizations of those operations can be expressed as special cases of tensor
+//! contraction. Examples include matrix multiplication, matrix trace, vector dot product,
+//! tensor Hadamard [element-wise] product, axis permutation, outer product, batch
+//! matrix multiplication, bilinear transformations, and many more.
 use std::collections::HashMap;
 
 use ndarray::prelude::*;
@@ -19,14 +27,13 @@ use ndarray::{Data, IxDyn, LinalgScalar};
 
 mod validation;
 pub use validation::{
-    einsum_path, validate, validate_and_optimize_order, validate_and_size, validate_and_size_from_shapes,
-    Contraction, OutputSize, SizedContraction,
+    einsum_path, validate, validate_and_optimize_order, validate_and_size,
+    validate_and_size_from_shapes, Contraction, SizedContraction,
 };
 
 mod optimizers;
 pub use optimizers::{
-    generate_optimized_order, ContractionOrder, OperandNumPair,
-    OptimizationMethod,
+    generate_optimized_order, ContractionOrder, OperandNumPair, OptimizationMethod,
 };
 
 mod contractors;
