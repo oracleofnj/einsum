@@ -1,6 +1,6 @@
 [package]
 name = "ndarray_einsum_beta"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["oracleofnj <jared.samet@aya.yale.edu>"]
 edition = "2018"
 license = "Apache-2.0"
@@ -18,11 +18,9 @@ wasm-bindgen = "0.2"
 ndarray = "0.12.1"
 num-traits = "0.2.6"
 
-# TODO: Move this back into dev-dependencies
+[dev-dependencies]
 ndarray-rand = "0.9.0"
 rand="0.6"
-
-[dev-dependencies]
 
 [lib]
 crate-type = ["cdylib", "rlib"]

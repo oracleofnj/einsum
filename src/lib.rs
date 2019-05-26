@@ -32,12 +32,11 @@ pub use validation::{
 };
 
 mod optimizers;
-pub use optimizers::{
-    generate_optimized_order, ContractionOrder, OperandNumPair, OptimizationMethod,
-};
+pub use optimizers::{generate_optimized_order, ContractionOrder, OptimizationMethod};
 
 mod contractors;
-pub use contractors::{PairContractor, PathContraction, PathContractor, TensordotGeneral};
+use contractors::{PairContractor, TensordotGeneral};
+pub use contractors::{PathContraction, PathContractionSteps, PathContractor};
 
 pub trait ArrayLike<A> {
     fn into_dyn_view(&self) -> ArrayView<A, IxDyn>;

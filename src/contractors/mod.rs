@@ -1,4 +1,3 @@
-use std::fmt::Debug;
 use crate::optimizers::{
     generate_optimized_order, ContractionOrder, OperandNumber, OptimizationMethod,
 };
@@ -6,6 +5,7 @@ use crate::{ArrayLike, SizedContraction};
 use ndarray::prelude::*;
 use ndarray::LinalgScalar;
 use std::collections::HashSet;
+use std::fmt::Debug;
 
 mod singleton_contractors;
 use singleton_contractors::{
@@ -190,8 +190,12 @@ impl<A> SimplificationMethodAndOutput<A> {
 impl<A> Debug for SimplificationMethodAndOutput<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match &self.method {
-            Some(_) => write!(f, "method: Some({:?}), new_indices: {:?}", &self.method, &self.new_indices),
-            None => write!(f, "None")
+            Some(_) => write!(
+                f,
+                "method: Some({:?}), new_indices: {:?}",
+                &self.method, &self.new_indices
+            ),
+            None => write!(f, "None"),
         }
     }
 }
@@ -307,17 +311,38 @@ impl<A> PairContractor<A> for PairContraction<A> {
 
 impl<A> Debug for PairContraction<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "lhs_simplification: {:?}, rhs_simplification: {:?}, op: {:?}", self.lhs_simplification, self.rhs_simplification, self.op)
+        write!(
+            f,
+            "lhs_simplification: {:?}, rhs_simplification: {:?}, op: {:?}",
+            self.lhs_simplification, self.rhs_simplification, self.op
+        )
     }
 }
 
+/// Either a singleton contraction, in the case of a single input operand, or a list of pair contractions,
+/// given two or more input operands
 pub enum PathContractionSteps<A> {
+    /// A `SingletonContraction` consists of some combination of permutation of the input axes,
+    // diagonalization of repeated indices, and summation across axes not present in the output
     SingletonContraction(SingletonContraction<A>),
+
+    /// Each `PairContraction` consists of a possible simplification of each of the two input tensors followed
+    /// by a contraction of the two simplified tensors. The two simplified tensors can be combined in a
+    /// number of fashions.
     PairContractions(Vec<PairContraction<A>>),
 }
 
+/// A `PathContraction`, returned by [`einsum_path`](fn.einsum_path.html), represents a fully-prepared plan to perform a tensor contraction.
+///
+/// It contains the order in which the input tensors should be contracted with one another or with one of the previous intermediate results,
+/// and for each step in the path, how to perform the pairwise contraction. For example, two tensors might be contracted
+/// with one another by computing the Hadamard (element-wise) product of the tensors, while a different pair might be contracted
+/// by performing a matrix multiplication. The contractions that will be performed are fully specified within the `PathContraction`.
 pub struct PathContraction<A> {
+    /// The order in which tensors should be paired off and contracted with one another
     pub contraction_order: ContractionOrder,
+
+    /// The details of the contractions to be performed
     pub steps: PathContractionSteps<A>,
 }
 
@@ -392,7 +417,7 @@ impl<A> Debug for PathContraction<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match &self.steps {
             PathContractionSteps::SingletonContraction(step) => write!(f, "only_step: {:?}", step),
-            PathContractionSteps::PairContractions(steps) => write!(f, "steps: {:?}", steps)
+            PathContractionSteps::PairContractions(steps) => write!(f, "steps: {:?}", steps),
         }
     }
 }
