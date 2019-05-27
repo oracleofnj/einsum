@@ -1,3 +1,37 @@
+// Copyright 2019 Jared Samet
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Implementations of the base-case singleton and pair contractors for different types of contractions.
+//!
+//! The six specific singleton contractors defined in this module implement the `SingletonContractor` trait
+//! and, if possible, the `SingletonViewer` trait as well. They perform some combination of
+//! permutation of the input axes (e.g. `ijk->jki`), diagonalization across repeated but un-summed axes (e.g. `ii->i`),
+//! and summation across axes not present in the output index list (e.g. `ijk->j`).
+//!
+//! The nine pair contractors defined here implement the `PairContractor` trait. Based on preliminary
+//! benchmarking, they are not all currently used as some appear to be slower than others.
+//!
+//! Each struct defined here implementing one of the `*Contractor` traits performs all the "setup work"
+//! required to perform the actual contraction. For example, `HadamardProductGeneral` permutes
+//! the input and output tensors and then computes the element-wise product of the two tensors.
+//! Given a `SizedContraction` (but no actual tensors), `HadamardProductGeneral::new()` figures out
+//! the permutation orders that will be needed so that `contract_pair` can simply execute the two
+//! permutations and then produce the element-wise product. This can be thought of as a way of
+//! compiling the `einsum` string into a set of instructions and the `PathContraction` object
+//! can be thought of as an AST that is ready to compute a contraction when supplied with an
+//! actual set of operands to contract.
+
 use crate::optimizers::{
     generate_optimized_order, ContractionOrder, OperandNumber, OptimizationMethod,
 };
@@ -200,6 +234,24 @@ impl<A> Debug for SimplificationMethodAndOutput<A> {
     }
 }
 
+/// Holds a `Box`ed `PairContractor` and two `Option<Box>`ed simplifications for the LHS and RHS tensors.
+///
+/// For example, the contraction `ijk,kj->jk` will currently be performed as follows:
+///
+/// 1. Simplify the LHS with the contraction `ijk->jk`
+/// 2. Don't simplify the RHS
+/// 3. Use HadamardProductGeneral to compute `jk,kj->jk`
+///
+/// A second example is the contraction `iij,jkk->ik`:
+///
+/// 1. Simplify the LHS with the contraction `iij->ij`
+/// 2. Simplify the RHS with the contraction `jkk->jk`
+/// 3. Use TensordotGeneral to compute `ij,jk->ik`
+///
+/// Since the axis lengths aren't known until runtime, and the actual einsum string may not
+/// be either, it is generally not possible to know at compile time which specific PairContractor
+/// will be used to perform a given contraction, or even which contractions will be performed;
+/// the optimizer could choose a different order.
 pub struct PairContraction<A> {
     lhs_simplification: SingletonSimplificationMethod<A>,
     rhs_simplification: SingletonSimplificationMethod<A>,

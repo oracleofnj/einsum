@@ -28,7 +28,7 @@ use ndarray::{Data, IxDyn, LinalgScalar};
 mod validation;
 pub use validation::{
     einsum_path, validate, validate_and_optimize_order, validate_and_size,
-    validate_and_size_from_shapes, Contraction, SizedContraction,
+    Contraction, SizedContraction,
 };
 
 mod optimizers;
@@ -94,12 +94,6 @@ where
     );
     tensordotter.contract_pair(&lhs.view().into_dyn(), &rhs.view().into_dyn())
 }
-
-mod wasm_bindings;
-pub use wasm_bindings::{
-    slow_einsum_with_flattened_operands_as_json_string_as_json,
-    validate_and_size_from_shapes_as_string_as_json, validate_as_json,
-};
 
 mod slow_versions;
 pub use slow_versions::{slow_einsum, slow_einsum_given_sized_contraction};

@@ -1,3 +1,17 @@
+// Copyright 2019 Jared Samet
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use crate::{
     generate_optimized_order, ArrayLike, ContractionOrder, OptimizationMethod, PathContraction,
     PathContractor,
@@ -6,7 +20,6 @@ use lazy_static::lazy_static;
 use ndarray::prelude::*;
 use ndarray::LinalgScalar;
 use regex::Regex;
-use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 
 /// The result of running an `einsum`-formatted string through the regex.
@@ -30,7 +43,7 @@ struct EinsumParse {
 /// assert_eq!(contraction.output_indices, vec!['i', 'k']);
 /// assert_eq!(contraction.summation_indices, vec!['j']);
 /// ```
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct Contraction {
     /// A vector with as many elements as input operands, where each
     /// member of the vector is a `Vec<char>` with each char representing the label for
@@ -190,7 +203,7 @@ impl OutputSizeMethods for OutputSize {
 /// assert_eq!(sc.output_size[&'k'], 4);
 /// assert_eq!(sc.output_size[&'j'], 3);
 /// ```
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct SizedContraction {
     pub contraction: Contraction,
     pub output_size: OutputSize,
@@ -338,15 +351,6 @@ fn get_operand_shapes<A>(operands: &[&dyn ArrayLike<A>]) -> Vec<Vec<usize>> {
         .iter()
         .map(|operand| Vec::from(operand.into_dyn_view().shape()))
         .collect()
-}
-
-/// Only included so the function can be called from WASM, i.e. without
-/// arguments that are already ndarray ```ArrayBase```s.
-pub fn validate_and_size_from_shapes(
-    input_string: &str,
-    operand_shapes: &[Vec<usize>],
-) -> Result<SizedContraction, &'static str> {
-    SizedContraction::from_string_and_shapes(input_string, operand_shapes)
 }
 
 /// Wrapper around [SizedContraction::new()](struct.SizedContraction.html#method.new).

@@ -1,5 +1,5 @@
-use ndarray_einsum_beta::*;
 use ndarray::prelude::*;
+use ndarray_einsum_beta::*;
 use ndarray_rand::RandomExt;
 use rand::distributions::Uniform;
 const TOL: f64 = 1e-10;
@@ -38,8 +38,6 @@ fn _test_parses() {
         "i,j->ijj",
     ] {
         println!("Input string: {}", test_string);
-        println!("{}", ndarray_einsum_beta::validate_as_json(test_string));
-        println!("");
     }
 }
 
@@ -780,7 +778,12 @@ fn it_contracts_three_matrices() {
         }
     }
 
-    let ep = einsum_path("ij,jk,kl->il", &[&op1, &op2, &op3], OptimizationMethod::Naive).unwrap();
+    let ep = einsum_path(
+        "ij,jk,kl->il",
+        &[&op1, &op2, &op3],
+        OptimizationMethod::Naive,
+    )
+    .unwrap();
     let dotted = ep.contract_operands(&[&op1, &op2, &op3]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
@@ -807,7 +810,12 @@ fn it_contracts_three_matrices_with_repeats_1() {
         }
     }
 
-    let ep = einsum_path("ij,jmmnk,kl->il", &[&op1, &op2, &op3], OptimizationMethod::Naive).unwrap();
+    let ep = einsum_path(
+        "ij,jmmnk,kl->il",
+        &[&op1, &op2, &op3],
+        OptimizationMethod::Naive,
+    )
+    .unwrap();
     let dotted = ep.contract_operands(&[&op1, &op2, &op3]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
@@ -834,7 +842,12 @@ fn it_contracts_three_matrices_with_repeats_2() {
         }
     }
 
-    let ep = einsum_path("immnj,jk,kml->il", &[&op1, &op2, &op3], OptimizationMethod::Naive).unwrap();
+    let ep = einsum_path(
+        "immnj,jk,kml->il",
+        &[&op1, &op2, &op3],
+        OptimizationMethod::Naive,
+    )
+    .unwrap();
     let dotted = ep.contract_operands(&[&op1, &op2, &op3]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
@@ -861,7 +874,12 @@ fn it_contracts_three_matrices_with_repeats_3() {
         }
     }
 
-    let ep = einsum_path("immnj,jk,kl->mil", &[&op1, &op2, &op3], OptimizationMethod::Naive).unwrap();
+    let ep = einsum_path(
+        "immnj,jk,kl->mil",
+        &[&op1, &op2, &op3],
+        OptimizationMethod::Naive,
+    )
+    .unwrap();
     let dotted = ep.contract_operands(&[&op1, &op2, &op3]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
@@ -887,7 +905,12 @@ fn it_contracts_four_matrices() {
         }
     }
 
-    let ep = einsum_path("ij,jk,kl,lm->il", &[&op1, &op2, &op3, &op4], OptimizationMethod::Naive).unwrap();
+    let ep = einsum_path(
+        "ij,jk,kl,lm->il",
+        &[&op1, &op2, &op3, &op4],
+        OptimizationMethod::Naive,
+    )
+    .unwrap();
     let dotted = ep.contract_operands(&[&op1, &op2, &op3, &op4]);
     assert!(correct_answer.all_close(&dotted, TOL));
 }
