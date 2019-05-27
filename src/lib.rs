@@ -27,8 +27,8 @@ use ndarray::{Data, IxDyn, LinalgScalar};
 
 mod validation;
 pub use validation::{
-    einsum_path, validate, validate_and_optimize_order, validate_and_size,
-    Contraction, SizedContraction,
+    einsum_path, validate, validate_and_optimize_order, validate_and_size, Contraction,
+    SizedContraction,
 };
 
 mod optimizers;
@@ -52,6 +52,7 @@ where
     }
 }
 
+/// Wrapper around [SizedContraction::contract_operands](struct.SizedContraction.html#method.contract_operands).
 pub fn einsum_sc<A: LinalgScalar>(
     sized_contraction: &SizedContraction,
     operands: &[&ArrayLike<A>],
@@ -59,6 +60,7 @@ pub fn einsum_sc<A: LinalgScalar>(
     sized_contraction.contract_operands(operands)
 }
 
+/// Performs all steps of the process in one function: parse the string, compile the execution plan, and execute the contraction.
 pub fn einsum<A: LinalgScalar>(
     input_string: &str,
     operands: &[&dyn ArrayLike<A>],

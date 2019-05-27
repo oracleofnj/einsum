@@ -12,6 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Contains functions and structs related to parsing an `einsum`-formatted string
+//!
+//! This module has the implementation of `Contraction` and `SizedContraction`. `SizedContraction`
+//! is used throughout the library to store the details of a full contraction (corresponding
+//! to a string supplied by the caller) or a mini-contraction (corresponding to a simplification of
+//! a single tensor or a pairwise contraction between two tensors) produced by the optimizer in order
+//! to perform the full contraction.
+//!
+//!
 use crate::{
     generate_optimized_order, ArrayLike, ContractionOrder, OptimizationMethod, PathContraction,
     PathContractor,
@@ -361,6 +370,7 @@ pub fn validate_and_size<A>(
     SizedContraction::new(input_string, operands)
 }
 
+/// Create a [SizedContraction](struct.SizedContraction.html) and then optimize the order in which pairs of inputs will be contracted.
 pub fn validate_and_optimize_order<A>(
     input_string: &str,
     operands: &[&dyn ArrayLike<A>],
@@ -370,6 +380,7 @@ pub fn validate_and_optimize_order<A>(
     Ok(generate_optimized_order(&sc, optimization_strategy))
 }
 
+/// Create a [SizedContraction](struct.SizedContraction.html), optimize the contraction order, and compile the result into a [PathContraction](struct.PathContraction.html).
 pub fn einsum_path<A>(
     input_string: &str,
     operands: &[&dyn ArrayLike<A>],

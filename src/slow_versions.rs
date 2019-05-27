@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Very inefficient and explicit to be removed or only used for testing
+//!
+//! Iterates through all possible combinations of index values and executes
+//! thousands of times slower than real implementation.
 use crate::*;
 
 //////// Slow stuff below here ////////
@@ -151,6 +155,10 @@ fn partial_einsum_outer_loop<A: LinalgScalar>(
     }
 }
 
+/// Very inefficient and explicit to be removed or only used for testing
+///
+/// Iterates through all possible combinations of index values and executes
+/// thousands of times slower than real implementation.
 pub fn slow_einsum_given_sized_contraction<A: LinalgScalar>(
     sized_contraction: &SizedContraction,
     operands: &[&dyn ArrayLike<A>],
@@ -185,6 +193,10 @@ pub fn slow_einsum_given_sized_contraction<A: LinalgScalar>(
     )
 }
 
+/// Very inefficient and explicit to be removed or only used for testing
+///
+/// Iterates through all possible combinations of index values and executes
+/// thousands of times slower than real implementation.
 pub fn slow_einsum<A: LinalgScalar>(
     input_string: &str,
     operands: &[&dyn ArrayLike<A>],
