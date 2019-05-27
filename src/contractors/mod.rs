@@ -28,7 +28,7 @@
 //! Given a `SizedContraction` (but no actual tensors), `HadamardProductGeneral::new()` figures out
 //! the permutation orders that will be needed so that `contract_pair` can simply execute the two
 //! permutations and then produce the element-wise product. This can be thought of as a way of
-//! compiling the `einsum` string into a set of instructions and the `PathContraction` object
+//! compiling the `einsum` string into a set of instructions and the `EinsumPath` object
 //! can be thought of as an AST that is ready to compute a contraction when supplied with an
 //! actual set of operands to contract.
 
@@ -99,12 +99,12 @@ pub trait PairContractor<A>: Debug {
     }
 }
 
-pub trait PathContractor<A>: Debug {
-    fn contract_operands(&self, operands: &[&dyn ArrayLike<A>]) -> ArrayD<A>
-    where
-        A: Clone + LinalgScalar;
-}
-
+// pub trait PathContractor<A>: Debug {
+//     fn contract_operands(&self, operands: &[&dyn ArrayLike<A>]) -> ArrayD<A>
+//     where
+//         A: Clone + LinalgScalar;
+// }
+//
 pub struct SingletonContraction<A> {
     op: Box<dyn SingletonContractor<A>>,
 }
@@ -373,7 +373,7 @@ impl<A> Debug for PairContraction<A> {
 
 /// Either a singleton contraction, in the case of a single input operand, or a list of pair contractions,
 /// given two or more input operands
-pub enum PathContractionSteps<A> {
+pub enum EinsumPathSteps<A> {
     /// A `SingletonContraction` consists of some combination of permutation of the input axes,
     /// diagonalization of repeated indices, and summation across axes not present in the output
     SingletonContraction(SingletonContraction<A>),
@@ -384,32 +384,32 @@ pub enum PathContractionSteps<A> {
     PairContractions(Vec<PairContraction<A>>),
 }
 
-/// A `PathContraction`, returned by [`einsum_path`](fn.einsum_path.html), represents a fully-prepared plan to perform a tensor contraction.
+/// An `EinsumPath`, returned by [`einsum_path`](fn.einsum_path.html), represents a fully-prepared plan to perform a tensor contraction.
 ///
 /// It contains the order in which the input tensors should be contracted with one another or with one of the previous intermediate results,
 /// and for each step in the path, how to perform the pairwise contraction. For example, two tensors might be contracted
 /// with one another by computing the Hadamard (element-wise) product of the tensors, while a different pair might be contracted
-/// by performing a matrix multiplication. The contractions that will be performed are fully specified within the `PathContraction`.
-pub struct PathContraction<A> {
+/// by performing a matrix multiplication. The contractions that will be performed are fully specified within the `EinsumPath`.
+pub struct EinsumPath<A> {
     /// The order in which tensors should be paired off and contracted with one another
     pub contraction_order: ContractionOrder,
 
     /// The details of the contractions to be performed
-    pub steps: PathContractionSteps<A>,
+    pub steps: EinsumPathSteps<A>,
 }
 
-impl<A> PathContraction<A> {
+impl<A> EinsumPath<A> {
     pub fn new(sc: &SizedContraction) -> Self {
         let contraction_order = generate_optimized_order(&sc, OptimizationMethod::Naive);
 
-        PathContraction::from_path(&contraction_order)
+        EinsumPath::from_path(&contraction_order)
     }
 
     pub fn from_path(contraction_order: &ContractionOrder) -> Self {
         match contraction_order {
-            ContractionOrder::Singleton(sized_contraction) => PathContraction {
+            ContractionOrder::Singleton(sized_contraction) => EinsumPath {
                 contraction_order: contraction_order.clone(),
-                steps: PathContractionSteps::SingletonContraction(SingletonContraction::new(
+                steps: EinsumPathSteps::SingletonContraction(SingletonContraction::new(
                     sized_contraction,
                 )),
             },
@@ -420,30 +420,27 @@ impl<A> PathContraction<A> {
                     steps.push(PairContraction::new(&step.sized_contraction));
                 }
 
-                PathContraction {
+                EinsumPath {
                     contraction_order: contraction_order.clone(),
-                    steps: PathContractionSteps::PairContractions(steps),
+                    steps: EinsumPathSteps::PairContractions(steps),
                 }
             }
         }
     }
 }
 
-impl<A> PathContractor<A> for PathContraction<A> {
-    fn contract_operands(&self, operands: &[&dyn ArrayLike<A>]) -> ArrayD<A>
+impl<A> EinsumPath<A> {
+    pub fn contract_operands(&self, operands: &[&dyn ArrayLike<A>]) -> ArrayD<A>
     where
         A: Clone + LinalgScalar,
     {
         // Uncomment for help debugging
         // println!("{:?}", self);
         match (&self.steps, &self.contraction_order) {
-            (PathContractionSteps::SingletonContraction(c), ContractionOrder::Singleton(_)) => {
+            (EinsumPathSteps::SingletonContraction(c), ContractionOrder::Singleton(_)) => {
                 c.contract_singleton(&operands[0].into_dyn_view())
             }
-            (
-                PathContractionSteps::PairContractions(steps),
-                ContractionOrder::Pairs(order_steps),
-            ) => {
+            (EinsumPathSteps::PairContractions(steps), ContractionOrder::Pairs(order_steps)) => {
                 let mut intermediate_results: Vec<ArrayD<A>> = Vec::new();
                 for (step, order_step) in steps.iter().zip(order_steps.iter()) {
                     let lhs = match order_step.operand_nums.lhs {
@@ -465,11 +462,11 @@ impl<A> PathContractor<A> for PathContraction<A> {
     }
 }
 
-impl<A> Debug for PathContraction<A> {
+impl<A> Debug for EinsumPath<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match &self.steps {
-            PathContractionSteps::SingletonContraction(step) => write!(f, "only_step: {:?}", step),
-            PathContractionSteps::PairContractions(steps) => write!(f, "steps: {:?}", steps),
+            EinsumPathSteps::SingletonContraction(step) => write!(f, "only_step: {:?}", step),
+            EinsumPathSteps::PairContractions(steps) => write!(f, "steps: {:?}", steps),
         }
     }
 }

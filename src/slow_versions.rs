@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Very inefficient and explicit to be removed or only used for testing
+//! Very inefficient and expected to be removed or only used for testing
 //!
 //! Iterates through all possible combinations of index values and executes
 //! thousands of times slower than real implementation.
@@ -197,6 +197,7 @@ pub fn slow_einsum_given_sized_contraction<A: LinalgScalar>(
 ///
 /// Iterates through all possible combinations of index values and executes
 /// thousands of times slower than real implementation.
+#[allow(dead_code)]
 pub fn slow_einsum<A: LinalgScalar>(
     input_string: &str,
     operands: &[&dyn ArrayLike<A>],

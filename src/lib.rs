@@ -14,7 +14,7 @@
 
 //! The `ndarray_einsum` crate implements the `einsum` function, originally
 //! implemented for numpy by Mark Wiebe and subsequently reimplemented for
-//! other tensor libraries such as Tensorflow and PyTorch. einsum (Einstein summation)
+//! other tensor libraries such as Tensorflow and PyTorch. `einsum` (short for Einstein summation)
 //! implements general multidimensional tensor contraction. Many linear algebra operations
 //! and generalizations of those operations can be expressed as special cases of tensor
 //! contraction. Examples include matrix multiplication, matrix trace, vector dot product,
@@ -35,9 +35,14 @@ mod optimizers;
 pub use optimizers::{generate_optimized_order, ContractionOrder, OptimizationMethod};
 
 mod contractors;
+pub use contractors::{EinsumPath, EinsumPathSteps};
 use contractors::{PairContractor, TensordotGeneral};
-pub use contractors::{PathContraction, PathContractionSteps, PathContractor};
 
+/// This trait is implemented for all `ArrayBase` variants and is parameterized by the data type.
+///
+/// It's here so `einsum` and the other functions accepting a list of operands
+/// can take a slice `&[&dyn ArrayLike<A>]` where the elements of the slice can have
+/// different numbers of dimensions and can be a mixture of `Array` and `ArrayView`.
 pub trait ArrayLike<A> {
     fn into_dyn_view(&self) -> ArrayView<A, IxDyn>;
 }
@@ -69,7 +74,46 @@ pub fn einsum<A: LinalgScalar>(
     Ok(einsum_sc(&sized_contraction, operands))
 }
 
-// API ONLY:
+/// Compute tensor dot product between two tensors.
+///
+/// Similar to [the numpy function of the same name](https://docs.scipy.org/doc/numpy/reference/generated/numpy.tensordot.html).
+/// Easiest to explain by showing the `einsum` equivalents:
+///
+/// ```
+/// # use ndarray::prelude::*;
+/// # use ndarray_einsum_beta::*;
+/// let m1 = Array::range(0., (3*4*5*6) as f64, 1.)
+///             .into_shape((3,4,5,6,))
+///             .unwrap();
+/// let m2 = Array::range(0., (4*5*6*7) as f64, 1.)
+///             .into_shape((4,5,6,7))
+///             .unwrap();
+/// assert_eq!(
+///     einsum(
+///         "ijkl,jklm->im",
+///         &[&m1, &m2]
+///     ).unwrap(),
+///     tensordot(
+///         &m1,
+///         &m2,
+///         &[Axis(1), Axis(2), Axis(3)],
+///         &[Axis(0), Axis(1), Axis(2)]
+///     )
+/// );
+///
+/// assert_eq!(
+///     einsum(
+///         "abic,dief->abcdef",
+///         &[&m1, &m2]
+///     ).unwrap(),
+///     tensordot(
+///         &m1,
+///         &m2,
+///         &[Axis(2)],
+///         &[Axis(1)]
+///     )
+/// );
+/// ```
 pub fn tensordot<A, S, S2, D, E>(
     lhs: &ArrayBase<S, D>,
     rhs: &ArrayBase<S2, E>,
@@ -98,4 +142,3 @@ where
 }
 
 mod slow_versions;
-pub use slow_versions::{slow_einsum, slow_einsum_given_sized_contraction};

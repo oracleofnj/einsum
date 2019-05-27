@@ -22,8 +22,7 @@
 //!
 //!
 use crate::{
-    generate_optimized_order, ArrayLike, ContractionOrder, OptimizationMethod, PathContraction,
-    PathContractor,
+    generate_optimized_order, ArrayLike, ContractionOrder, EinsumPath, OptimizationMethod,
 };
 use lazy_static::lazy_static;
 use ndarray::prelude::*;
@@ -317,7 +316,7 @@ impl SizedContraction {
         &self,
         operands: &[&dyn ArrayLike<A>],
     ) -> ArrayD<A> {
-        let cpc = PathContraction::new(&self);
+        let cpc = EinsumPath::new(&self);
         cpc.contract_operands(operands)
     }
 }
@@ -380,13 +379,13 @@ pub fn validate_and_optimize_order<A>(
     Ok(generate_optimized_order(&sc, optimization_strategy))
 }
 
-/// Create a [SizedContraction](struct.SizedContraction.html), optimize the contraction order, and compile the result into a [PathContraction](struct.PathContraction.html).
+/// Create a [SizedContraction](struct.SizedContraction.html), optimize the contraction order, and compile the result into an [EinsumPath](struct.EinsumPath.html).
 pub fn einsum_path<A>(
     input_string: &str,
     operands: &[&dyn ArrayLike<A>],
     optimization_strategy: OptimizationMethod,
-) -> Result<PathContraction<A>, &'static str> {
+) -> Result<EinsumPath<A>, &'static str> {
     let contraction_order =
         validate_and_optimize_order(input_string, operands, optimization_strategy)?;
-    Ok(PathContraction::from_path(&contraction_order))
+    Ok(EinsumPath::from_path(&contraction_order))
 }

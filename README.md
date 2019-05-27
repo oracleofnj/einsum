@@ -5,7 +5,7 @@
 Cargo.toml:
 
 ```
-ndarray_einsum_beta = "0.3.0"
+ndarray_einsum_beta = "0.3.1"
 ```
 
 src/main.rs:
