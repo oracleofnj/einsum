@@ -1,42 +1,73 @@
+//! Methods to produce a `ContractionOrder`, specifying what order in which to perform pairwise contractions between tensors
+//! in order to perform the full contraction.
 use crate::SizedContraction;
 use std::collections::HashSet;
 
+/// Either an input operand or an intermediate result
 #[derive(Debug, Clone)]
 pub enum OperandNumber {
-    // Is the input one of the arguments or one of the intermediate results?
     Input(usize),
     IntermediateResult(usize),
 }
 
+/// Which two tensors to contract
 #[derive(Debug, Clone)]
 pub struct OperandNumPair {
     pub lhs: OperandNumber,
     pub rhs: OperandNumber,
 }
 
+/// A single pairwise contraction between two input operands, an input operand and an intermediate
+/// result, or two intermediate results.
 #[derive(Debug, Clone)]
 pub struct Pair {
+    /// The contraction to be performed
     pub sized_contraction: SizedContraction,
+
+    /// Which two tensors to contract
     pub operand_nums: OperandNumPair,
 }
 
+/// The order in which to contract pairs of tensors and the specific contractions to be performed between the pairs.
+///
+/// Either a singleton contraction, in the case of a single input operand, or a list of pair contractions,
+/// given two or more input operands
 #[derive(Debug, Clone)]
 pub enum ContractionOrder {
+    /// If there's only one input operand, this is simply a clone of the original SizedContraction
     Singleton(SizedContraction),
+
+    /// If there are two or more input operands, this is a vector of pairwise contractions between
+    /// input operands and/or intermediate results from prior contractions.
     Pairs(Vec<Pair>),
 }
 
+/// Strategy for optimizing the contraction. The only currently supported options are "Naive" and "Reverse".
+///
+/// TODO: Figure out whether this should be done with traits
 #[derive(Debug)]
 pub enum OptimizationMethod {
+    /// Contracts each pair of tensors in the order given in the input and uses the intermediate
+    /// result as the LHS of the next contraction.
     Naive,
-    Reverse, // Just for testing
+
+    /// Contracts each pair of tensors in the reverse of the order given in the input and uses the
+    /// intermediate result as the LHS of the next contraction. Only implemented to help test
+    /// that this is actually functioning properly.
+    Reverse,
+
+    /// (Not yet supported) Something like [this](https://optimized-einsum.readthedocs.io/en/latest/greedy_path.html)
     Greedy,
+
+    /// (Not yet supported) Something like [this](https://optimized-einsum.readthedocs.io/en/latest/optimal_path.html)
     Optimal,
+
+    /// (Not yet supported) Something like [this](https://optimized-einsum.readthedocs.io/en/latest/branching_path.html)
     Branch,
 }
 
+/// Returns a set of all the indices in any of the remaining operands or in the output
 fn get_remaining_indices(operand_indices: &[Vec<char>], output_indices: &[char]) -> HashSet<char> {
-    // Returns a set of all the indices in any of the remaining operands or in the output
     let mut result: HashSet<char> = HashSet::new();
     for &c in operand_indices.iter().flat_map(|s| s.iter()) {
         result.insert(c);
@@ -47,8 +78,8 @@ fn get_remaining_indices(operand_indices: &[Vec<char>], output_indices: &[char])
     result
 }
 
+/// Returns a set of all the indices in the LHS or the RHS
 fn get_existing_indices(lhs_indices: &[char], rhs_indices: &[char]) -> HashSet<char> {
-    // Returns a set of all the indices in the LHS or the RHS
     let mut result: HashSet<char> = lhs_indices.iter().cloned().collect();
     for &c in rhs_indices.iter() {
         result.insert(c);
@@ -56,6 +87,7 @@ fn get_existing_indices(lhs_indices: &[char], rhs_indices: &[char]) -> HashSet<c
     result
 }
 
+/// Returns a permuted version of `sized_contraction`, specified by `tensor_order`
 fn generate_permuted_contraction(
     sized_contraction: &SizedContraction,
     tensor_order: &[usize],
@@ -77,6 +109,7 @@ fn generate_permuted_contraction(
         .unwrap()
 }
 
+/// Generates a mini-contraction corresponding to `lhs_operand_indices`,`rhs_operand_indices`->`output_indices`
 fn generate_sized_contraction_pair(
     lhs_operand_indices: &[char],
     rhs_operand_indices: &[char],
@@ -91,6 +124,9 @@ fn generate_sized_contraction_pair(
         .unwrap()
 }
 
+/// Generate the actual path consisting of all the mini-contractions. Currently always
+/// contracts two input operands and then repeatedly uses the result as the LHS of the
+/// next pairwise contraction.
 fn generate_path(sized_contraction: &SizedContraction, tensor_order: &[usize]) -> ContractionOrder {
     // Generate the actual path consisting of all the mini-contractions.
     //
@@ -222,10 +258,12 @@ fn generate_path(sized_contraction: &SizedContraction, tensor_order: &[usize]) -
     }
 }
 
+/// Contracts the first two operands, then contracts the result with the third operand, etc.
 fn naive_order(sized_contraction: &SizedContraction) -> Vec<usize> {
     (0..sized_contraction.contraction.operand_indices.len()).collect()
 }
 
+/// Contracts the last two operands, then contracts the result with the third-to-last operand, etc.
 fn reverse_order(sized_contraction: &SizedContraction) -> Vec<usize> {
     (0..sized_contraction.contraction.operand_indices.len())
         .rev()
@@ -233,6 +271,8 @@ fn reverse_order(sized_contraction: &SizedContraction) -> Vec<usize> {
 }
 
 // TODO: Maybe this should take a function pointer from &SizedContraction -> Vec<usize>?
+/// Given a `SizedContraction` and an optimization strategy, returns an order in which to
+/// perform pairwise contractions in order to produce the final result
 pub fn generate_optimized_order(
     sized_contraction: &SizedContraction,
     strategy: OptimizationMethod,

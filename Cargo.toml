@@ -28,3 +28,6 @@ crate-type = ["cdylib", "rlib"]
 [profile.release]
 debug = true
 lto = true
+
+[package.metadata.docs.rs]
+rustdoc-args = [ "--document-private-items", "--no-deps", "--color=always" ]

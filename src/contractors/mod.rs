@@ -323,7 +323,7 @@ impl<A> Debug for PairContraction<A> {
 /// given two or more input operands
 pub enum PathContractionSteps<A> {
     /// A `SingletonContraction` consists of some combination of permutation of the input axes,
-    // diagonalization of repeated indices, and summation across axes not present in the output
+    /// diagonalization of repeated indices, and summation across axes not present in the output
     SingletonContraction(SingletonContraction<A>),
 
     /// Each `PairContraction` consists of a possible simplification of each of the two input tensors followed
