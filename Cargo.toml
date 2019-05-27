@@ -1,6 +1,6 @@
 [package]
 name = "ndarray_einsum_beta"
-version = "0.2.2"
+version = "0.2.3"
 authors = ["oracleofnj <jared.samet@aya.yale.edu>"]
 edition = "2018"
 license = "Apache-2.0"
@@ -30,4 +30,4 @@ debug = true
 lto = true
 
 [package.metadata.docs.rs]
-rustdoc-args = [ "--document-private-items", "--no-deps", "--color=always" ]
+rustdoc-args = [ "--document-private-items" ]
