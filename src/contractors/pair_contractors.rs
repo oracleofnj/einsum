@@ -12,6 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Contains the specific implementations of `PairContractor` that represent the base-case ways
+//! to contract two simplified tensors.
+//!
+//! A tensor is simplified with respect to another tensor and a set of output indices
+//! if two conditions are met:
+//!
+//! 1. Each index in the tensor is present in either the other tensor or in the output indices.
+//! 2. Each index in the tensor appears only once.
+//!
+//! Examples of `einsum` strings with two simplified tensors:
+//!
+//! 1. `ijk,jkl->il`
+//! 2. `ijk,jkl->ijkl`
+//! 3. `ijk,ijk->`
+//!
+//! Examples of `einsum` strings with two tensors that are NOT simplified:
+//!
+//! 1. `iijk,jkl->il` Not simplified because `i` appears twice in the LHS tensor
+//! 2. `ijk,jkl->i` Not simplified because `l` only appears in the RHS tensor
+//!
+//! If the two input tensors are both simplified, all instances of tensor contraction
+//! can be expressed as one of a small number of cases. Note that there may be more than
+//! one way to express the same contraction; some preliminary benchmarking has been
+//! done to identify the faster choice.
+
 use ndarray::prelude::*;
 use ndarray::LinalgScalar;
 use std::collections::HashSet;
@@ -19,6 +44,9 @@ use std::collections::HashSet;
 use super::{PairContractor, Permutation, SingletonContractor, SingletonViewer};
 use crate::SizedContraction;
 
+/// Helper function used throughout this module to find the positions of one set of indices
+/// in a second set of indices. The most common case is generating a permutation to
+/// be supplied to `permuted_axes`.
 fn maybe_find_outputs_in_inputs_unique(
     output_indices: &[char],
     input_indices: &[char],
@@ -48,12 +76,33 @@ fn find_outputs_in_inputs_unique(output_indices: &[char], input_indices: &[char]
         .collect()
 }
 
+/// Performs tensor dot product for two tensors where no permutation needs to be performed,
+/// e.g. `ijk,jkl->il` or `ijk,klm->ijlm`.
+///
+/// The axes to be contracted must be the last axes of the LHS tensor and the first axes
+/// of the RHS tensor, and the axis order for the output tensor must be all the uncontracted
+/// axes of the LHS tensor followed by all the uncontracted axes of the RHS tensor, in the
+/// orders those originally appear in the LHS and RHS tensors.
+///
+/// The contraction is performed by reshaping the LHS into a matrix (2-D tensor) of shape
+/// [len_uncontracted_lhs, len_contracted_axes], reshaping the RHS into shape
+/// [len_contracted_axes, len_contracted_rhs], matrix-multiplying the two reshaped tensor,
+/// and then reshaping the result into [...self.output_shape].
 #[derive(Clone, Debug)]
 pub struct TensordotFixedPosition {
-    len_contracted_lhs: usize,
+    /// The product of the lengths of all the uncontracted axes in the LHS (or 1 if all of the
+    /// LHS axes are contracted)
     len_uncontracted_lhs: usize,
-    len_contracted_rhs: usize,
+
+    /// The product of the lengths of all the uncontracted axes in the RHS (or 1 if all of the
+    /// RHS axes are contracted)
     len_uncontracted_rhs: usize,
+
+    /// The product of the lengths of all the contracted axes (or 1 if no axes are contracted,
+    /// i.e. the outer product is computed)
+    len_contracted_axes: usize,
+
+    /// The shape that the tensor dot product will be recast to
     output_shape: Vec<usize>,
 }
 
@@ -80,6 +129,12 @@ impl TensordotFixedPosition {
         )
     }
 
+    /// Compute the uncontracted and contracted axis lengths and the output shape based on the
+    /// input shapes and how many axes should be contracted from each tensor.
+    ///
+    /// TODO: The assert_eq! here could be tightened up by verifying that the
+    /// last `num_contracted_axes` of the LHS match the first `num_contracted_axes` of the
+    /// RHS axis-by-axis (as opposed to only checking the product as is done here.)
     pub fn from_shapes_and_number_of_contracted_axes(
         lhs_shape: &[usize],
         rhs_shape: &[usize],
@@ -109,12 +164,13 @@ impl TensordotFixedPosition {
                 output_shape.push(axis_length);
             }
         }
+        assert_eq!(len_contracted_rhs, len_contracted_lhs);
+        let len_contracted_axes = len_contracted_lhs;
 
         TensordotFixedPosition {
-            len_contracted_lhs,
             len_uncontracted_lhs,
-            len_contracted_rhs,
             len_uncontracted_rhs,
+            len_contracted_axes,
             output_shape,
         }
     }
@@ -134,11 +190,11 @@ impl<A> PairContractor<A> for TensordotFixedPosition {
         let lhs_array;
         let lhs_view = if lhs.is_standard_layout() {
             lhs.view()
-                .into_shape((self.len_uncontracted_lhs, self.len_contracted_lhs))
+                .into_shape((self.len_uncontracted_lhs, self.len_contracted_axes))
                 .unwrap()
         } else {
             lhs_array = Array::from_shape_vec(
-                [self.len_uncontracted_lhs, self.len_contracted_lhs],
+                [self.len_uncontracted_lhs, self.len_contracted_axes],
                 lhs.iter().cloned().collect(),
             )
             .unwrap();
@@ -148,11 +204,11 @@ impl<A> PairContractor<A> for TensordotFixedPosition {
         let rhs_array;
         let rhs_view = if rhs.is_standard_layout() {
             rhs.view()
-                .into_shape((self.len_contracted_rhs, self.len_uncontracted_rhs))
+                .into_shape((self.len_contracted_axes, self.len_uncontracted_rhs))
                 .unwrap()
         } else {
             rhs_array = Array::from_shape_vec(
-                [self.len_contracted_rhs, self.len_uncontracted_rhs],
+                [self.len_contracted_axes, self.len_uncontracted_rhs],
                 rhs.iter().cloned().collect(),
             )
             .unwrap();
@@ -168,6 +224,13 @@ impl<A> PairContractor<A> for TensordotFixedPosition {
 
 // TODO: Micro-optimization possible: Have a version without the final permutation,
 // which clones the array
+/// Computes the tensor dot product of two tensors, with individual permutations of the
+/// LHS and RHS performed as necessary, as well as a final permutation of the output.
+///
+/// Examples that qualify for TensordotGeneral but not TensordotFixedPosition:
+///
+/// 1. `jik,jkl->il` LHS tensor needs to be permuted `jik->ijk`
+/// 2. `ijk,klm->imlj` Output tensor needs to be permuted `ijlm->imlj`
 #[derive(Clone, Debug)]
 pub struct TensordotGeneral {
     lhs_permutation: Permutation,

@@ -1,6 +1,6 @@
 [package]
 name = "ndarray_einsum_beta"
-version = "0.3.1"
+version = "0.3.2"
 authors = ["oracleofnj <jared.samet@aya.yale.edu>"]
 edition = "2018"
 license = "Apache-2.0"
