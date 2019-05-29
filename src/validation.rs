@@ -150,7 +150,11 @@ impl Contraction {
     }
 }
 
+/// Alias for `HashMap<char, usize>`. Contains the axis lengths for all indices in the contraction.
+/// Contrary to the name, does not only hold the sizes for output indices.
 pub type OutputSize = HashMap<char, usize>;
+
+/// Enables `OutputSize::from_contraction_and_shapes()`
 trait OutputSizeMethods {
     fn from_contraction_and_shapes(
         contraction: &Contraction,
@@ -354,6 +358,7 @@ pub fn validate(input_string: &str) -> Result<Contraction, &'static str> {
     Contraction::new(input_string)
 }
 
+/// Returns a vector holding one `Vec<usize>` for each operand.
 fn get_operand_shapes<A>(operands: &[&dyn ArrayLike<A>]) -> Vec<Vec<usize>> {
     operands
         .iter()
@@ -377,15 +382,4 @@ pub fn validate_and_optimize_order<A>(
 ) -> Result<ContractionOrder, &'static str> {
     let sc = validate_and_size(input_string, operands)?;
     Ok(generate_optimized_order(&sc, optimization_strategy))
-}
-
-/// Create a [SizedContraction](struct.SizedContraction.html), optimize the contraction order, and compile the result into an [EinsumPath](struct.EinsumPath.html).
-pub fn einsum_path<A>(
-    input_string: &str,
-    operands: &[&dyn ArrayLike<A>],
-    optimization_strategy: OptimizationMethod,
-) -> Result<EinsumPath<A>, &'static str> {
-    let contraction_order =
-        validate_and_optimize_order(input_string, operands, optimization_strategy)?;
-    Ok(EinsumPath::from_path(&contraction_order))
 }

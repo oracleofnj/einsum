@@ -14,15 +14,19 @@
 
 //! Implementations of the base-case singleton and pair contractors for different types of contractions.
 //!
-//! The six specific singleton contractors defined in this module implement the `SingletonContractor` trait
-//! and, if possible, the `SingletonViewer` trait as well. They perform some combination of
-//! permutation of the input axes (e.g. `ijk->jki`), diagonalization across repeated but un-summed axes (e.g. `ii->i`),
-//! and summation across axes not present in the output index list (e.g. `ijk->j`).
+//! This module defines the `SingletonViewer`, `SingletonContractor`, and `PairContractor` traits as well
+//! as the generic "container" objects `EinsumPath`, `SingletonContraction`, and `PairContraction` that
+//! hold `Box`ed trait objects of the specific cases determined at runtime to be most appropriate
+//! for the requested contraction.
 //!
-//! The nine pair contractors defined here implement the `PairContractor` trait. Based on preliminary
-//! benchmarking, they are not all currently used as some appear to be slower than others.
+//! The specific singleton and pair contractors defined in the `singleton_contractors` and
+//! `pair_contractors` submodules implement the relevant traits defined here. The six specific singleton
+//! contractors defined in `singleton_contractors` perform some combination of permutation of the input
+//! axes (e.g. `ijk->jki`), diagonalization across repeated but un-summed axes (e.g. `ii->i`), and
+//! summation across axes not present in the output index list (e.g. `ijk->j`). Not all of the nine
+//! pair contractors defined in `pair_contractors` are currently used as some appear to be slower than others.
 //!
-//! Each struct defined here implementing one of the `*Contractor` traits performs all the "setup work"
+//! Each struct implementing one of the `*Contractor` traits performs all the "setup work"
 //! required to perform the actual contraction. For example, `HadamardProductGeneral` permutes
 //! the input and output tensors and then computes the element-wise product of the two tensors.
 //! Given a `SizedContraction` (but no actual tensors), `HadamardProductGeneral::new()` figures out
@@ -58,6 +62,14 @@ use pair_contractors::{
 mod strategies;
 use strategies::{PairMethod, PairSummary, SingletonMethod, SingletonSummary};
 
+/// `let new_view = obj.view_singleton(tensor_view);`
+///
+/// This trait represents contractions that can be performed by returning a view of the original
+/// tensor. The structs that currently implement this view are the ones that don't perform
+/// any summation over indices and hence return only a subset of the elements of the original tensor:
+/// `Identity`, `Permutation`, and `Diagonalization`. Note that whether `Diagonalization`
+/// can actually return a view is dependent on the memory layout of the input tensor; if the input
+/// tensor is not contiguous, `diag.view_singleton()` will `panic`.
 pub trait SingletonViewer<A>: Debug {
     fn view_singleton<'a, 'b>(&self, tensor: &'b ArrayViewD<'a, A>) -> ArrayViewD<'b, A>
     where
@@ -65,6 +77,9 @@ pub trait SingletonViewer<A>: Debug {
         A: Clone + LinalgScalar;
 }
 
+/// `let new_array = obj.contract_singleton(tensor_view);`
+///
+/// All singleton contractions should implement this trait. It returns a new owned `ArrayD`.
 pub trait SingletonContractor<A>: Debug {
     fn contract_singleton<'a, 'b>(&self, tensor: &'b ArrayViewD<'a, A>) -> ArrayD<A>
     where
@@ -72,6 +87,11 @@ pub trait SingletonContractor<A>: Debug {
         A: Clone + LinalgScalar;
 }
 
+/// `let new_array = obj.contract_pair(lhs_view, rhs_view);`
+///
+/// All pair contractions should implement this trait. It returns a new owned `ArrayD`. The trait
+/// also has a method with a default implementation, `obj.contract_and_assign_pair(lhs_view: &ArrayViewD,
+/// rhs_view: &ArrayViewD, out: &mut ArrayViewD) -> ()`.
 pub trait PairContractor<A>: Debug {
     fn contract_pair<'a, 'b, 'c, 'd>(
         &self,
@@ -99,12 +119,15 @@ pub trait PairContractor<A>: Debug {
     }
 }
 
-// pub trait PathContractor<A>: Debug {
-//     fn contract_operands(&self, operands: &[&dyn ArrayLike<A>]) -> ArrayD<A>
-//     where
-//         A: Clone + LinalgScalar;
-// }
-//
+/// Holds a `Box`ed `SingletonContractor` trait object.
+///
+/// Constructed at runtime based on the number of diagonalized, summed, and permuted axes
+/// in the input. Reimplements the `SingletonContractor` trait by delegating to the inner
+/// object.
+///
+/// For example, the contraction `iij->i` will be performed by assigning a `Box`ed
+/// `DiagonalizationAndSummation` to `op`. The contraction `ijk->kij` will be performed
+/// by assigning a `Box`ed `Permutation` to `op`.
 pub struct SingletonContraction<A> {
     op: Box<dyn SingletonContractor<A>>,
 }
@@ -152,14 +175,19 @@ impl<A> Debug for SingletonContraction<A> {
     }
 }
 
+/// Alias for `Option<Box<dyn SingletonContractor<A>>>`. `None` if a tensor is already simplified.
 type SingletonSimplificationMethod<A> = Option<Box<dyn SingletonContractor<A>>>;
 
+/// Holds an `Option<Box<dyn SingletonContractor<A>>>` and the resulting simplified indices.
 struct SimplificationMethodAndOutput<A> {
     method: SingletonSimplificationMethod<A>,
     new_indices: Vec<char>,
 }
 
 impl<A> SimplificationMethodAndOutput<A> {
+    /// Based on the number of diagonalized, permuted, and summed axes, chooses a struct implementing
+    /// `SingletonContractor` to simplify the tensor (or `None` if the tensor doesn't need simplification)
+    /// and computes the indices of the simplified tensor.
     fn from_indices_and_sizes(
         this_input_indices: &[char],
         other_input_indices: &[char],
@@ -234,7 +262,7 @@ impl<A> Debug for SimplificationMethodAndOutput<A> {
     }
 }
 
-/// Holds a `Box`ed `PairContractor` and two `Option<Box>`ed simplifications for the LHS and RHS tensors.
+/// Holds a `Box`ed `PairContractor` trait object and two `Option<Box>`ed simplifications for the LHS and RHS tensors.
 ///
 /// For example, the contraction `ijk,kj->jk` will currently be performed as follows:
 ///
