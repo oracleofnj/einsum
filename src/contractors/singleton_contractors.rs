@@ -12,12 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Contains the specific implementations of `SingletonContractor` and `SingletonViewer` that
+//! represent the base-case ways to contract or simplify a single tensor.
+//!
+//! All the structs here perform perform some combination of
+//! permutation of the input axes (e.g. `ijk->jki`), diagonalization across repeated but
+//! un-summed axes (e.g. `ii->i`),
+//! and summation across axes not present in the output index list (e.g. `ijk->j`).
+
 use ndarray::prelude::*;
 use ndarray::LinalgScalar;
 
 use super::{SingletonContractor, SingletonViewer};
 use crate::{Contraction, SizedContraction};
 
+/// Returns a view or clone of the input tensor.
+///
+/// Example: `ij->ij`
 #[derive(Clone, Debug)]
 pub struct Identity {}
 
@@ -47,6 +58,9 @@ impl<A> SingletonContractor<A> for Identity {
     }
 }
 
+/// Permutes the axes of the input tensor and returns a view or clones the elements.
+///
+/// Example: `ij->ji`
 #[derive(Clone, Debug)]
 pub struct Permutation {
     permutation: Vec<usize>,
@@ -105,6 +119,9 @@ impl<A> SingletonContractor<A> for Permutation {
     }
 }
 
+/// Sums across the elements of the input tensor that don't appear in the output tensor.
+///
+/// Example: `ij->i`
 #[derive(Clone, Debug)]
 pub struct Summation {
     orig_axis_list: Vec<usize>,
@@ -148,6 +165,13 @@ impl<A> SingletonContractor<A> for Summation {
     }
 }
 
+/// Returns the elements of the input tensor where all instances of the repeated indices are equal to one another.
+/// Optionally permutes the axes of the tensor as well.
+///
+/// Examples:
+///
+/// 1. `ii->i`
+/// 2. `iij->ji`
 #[derive(Clone, Debug)]
 pub struct Diagonalization {
     input_to_output_mapping: Vec<usize>,
@@ -232,6 +256,9 @@ impl<A> SingletonContractor<A> for Diagonalization {
     }
 }
 
+/// Permutes the elements of the input tensor and sums across elements that don't appear in the output.
+///
+/// Example: `ijk->kj`
 #[derive(Clone, Debug)]
 pub struct PermutationAndSummation {
     permutation: Permutation,
@@ -281,6 +308,13 @@ impl<A> SingletonContractor<A> for PermutationAndSummation {
     }
 }
 
+/// Returns the elements of the input tensor where all instances of the repeated indices are equal
+/// to one another, optionally permuting the axes, and sums across indices that don't appear in the output.
+///
+/// Examples:
+///
+/// 1. `iijk->ik` (Diagonalizes the `i` axes and sums over `j`)
+/// 2. `jijik->ki` (Diagonalizes `i` and `j` and sums over `j` after diagonalizagtion)
 #[derive(Clone, Debug)]
 pub struct DiagonalizationAndSummation {
     diagonalization: Diagonalization,

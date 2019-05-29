@@ -12,6 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! This module contains the "strategy choice" logic for which specific contractor
+//! should be used for a given mini-contraction.
+//!
+//! In general, `DiagonalizationAndSummation` should be able to accomodate all singleton
+//! contractions and `StackedTensordotGeneral` should be able to handle all pairs; however,
+//! other trait implementations might be faster.
+//!
+//! The code here has some duplication and is probably not the most idiomatic way to accomplish this.
+
 use crate::SizedContraction;
 use std::collections::{HashMap, HashSet};
 

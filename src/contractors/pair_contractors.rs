@@ -301,6 +301,11 @@ impl TensordotGeneral {
         )
     }
 
+    /// Produces a `TensordotGeneral` from the shapes and list of axes to be contracted.
+    ///
+    /// Wrapped by the public `tensordot` function and used by `TensordotGeneral::new()`.
+    /// lhs_axes lists the axes from the lhs tensor to contract and rhs_axes lists the
+    /// axes from the rhs tensor to contract.
     pub fn from_shapes_and_axis_numbers(
         lhs_shape: &[usize],
         rhs_shape: &[usize],
@@ -386,6 +391,12 @@ impl<A> PairContractor<A> for TensordotGeneral {
     }
 }
 
+/// Computes the Hadamard (element-wise) product of two tensors.
+///
+/// All instances of `SizedContraction` making use of this contractor must have the form
+/// `ij,ij->ij`.
+///
+/// Contractions of the form `ij,ji->ij` need to use `HadamardProductGeneral` instead.
 #[derive(Clone, Debug)]
 pub struct HadamardProduct {}
 
@@ -421,6 +432,13 @@ impl<A> PairContractor<A> for HadamardProduct {
     }
 }
 
+/// Permutes the axes of the LHS and RHS tensors to the order in which those axes appear in the
+/// output before computing the Hadamard (element-wise) product.
+///
+/// Examples of contractions that fit this category:
+///
+/// 1. `ij,ij->ij` (Can also can use `HadamardProduct`)
+/// 2. `ij,ji->ij` (Can only use `HadamardProductGeneral`)
 #[derive(Clone, Debug)]
 pub struct HadamardProductGeneral {
     lhs_permutation: Permutation,
@@ -469,6 +487,12 @@ impl<A> PairContractor<A> for HadamardProductGeneral {
     }
 }
 
+/// Multiplies every element of the RHS tensor by the single scalar in the 0-d LHS tensor.
+///
+/// This contraction can arise when the simplification of the LHS tensor results in all the
+/// axes being summed before the two tensors are contracted. For example, in the contraction
+/// `i,jk->jk`, every element of the RHS tensor is simply multiplied by the sum of the elements
+/// of the LHS tensor.
 #[derive(Clone, Debug)]
 pub struct ScalarMatrixProduct {}
 
@@ -505,6 +529,13 @@ impl<A> PairContractor<A> for ScalarMatrixProduct {
     }
 }
 
+/// Permutes the axes of the RHS tensor to the output order and multiply all elements by the single
+/// scalar in the 0-d LHS tensor.
+///
+/// This contraction can arise when the simplification of the LHS tensor results in all the
+/// axes being summed before the two tensors are contracted. For example, in the contraction
+/// `i,jk->kj`, the output matrix is equal to the RHS matrix, transposed and then scalar-multiplied
+/// by the sum of the elements of the LHS tensor.
 #[derive(Clone, Debug)]
 pub struct ScalarMatrixProductGeneral {
     rhs_permutation: Permutation,
@@ -553,6 +584,12 @@ impl<A> PairContractor<A> for ScalarMatrixProductGeneral {
     }
 }
 
+/// Multiplies every element of the LHS tensor by the single scalar in the 0-d RHS tensor.
+///
+/// This contraction can arise when the simplification of the LHS tensor results in all the
+/// axes being summed before the two tensors are contracted. For example, in the contraction
+/// `ij,k->ij`, every element of the LHS tensor is simply multiplied by the sum of the elements
+/// of the RHS tensor.
 #[derive(Clone, Debug)]
 pub struct MatrixScalarProduct {}
 
@@ -589,6 +626,13 @@ impl<A> PairContractor<A> for MatrixScalarProduct {
     }
 }
 
+/// Permutes the axes of the LHS tensor to the output order and multiply all elements by the single
+/// scalar in the 0-d RHS tensor.
+///
+/// This contraction can arise when the simplification of the RHS tensor results in all the
+/// axes being summed before the two tensors are contracted. For example, in the contraction
+/// `ij,k->ji`, the output matrix is equal to the LHS matrix, transposed and then scalar-multiplied
+/// by the sum of the elements of the RHS tensor.
 #[derive(Clone, Debug)]
 pub struct MatrixScalarProductGeneral {
     lhs_permutation: Permutation,
@@ -637,6 +681,16 @@ impl<A> PairContractor<A> for MatrixScalarProductGeneral {
     }
 }
 
+/// Permutes the axes of the LHS and RHS tensor, broadcasts into the output shape,
+/// and then computes the element-wise product of the two broadcast tensors.
+///
+/// Currently unused due to (limited) unfavorable benchmarking results compared to
+/// `StackedTensordotGeneral`. An example of a contraction that could theoretically
+/// be performed by this contraction is `ij,jk->ijk`: the LHS and RHS are both
+/// broadcast into output shape (|i|, |j|, |k|) and then multiplied elementwise.
+///
+/// However, the limited benchmarking performed so far favored iterating along the
+/// `j` axis and computing the outer products `i,k->ik` for each subview of the tensors.
 #[derive(Clone, Debug)]
 pub struct BroadcastProductGeneral {
     lhs_permutation: Permutation,
@@ -723,6 +777,25 @@ impl<A> PairContractor<A> for BroadcastProductGeneral {
 
 // TODO: Micro-optimization: Have a version without the output permutation,
 // which clones the array
+//
+// TODO: Fix whatever bug prevents this from being used in all cases
+//
+// TODO: convert this to directly reshape into a 3-D matrix instead of delegating
+// that to TensordotGeneral
+
+/// Repeatedly computes the tensor dot of subviews of the two tensors, iterating over
+/// indices which appear in the LHS, RHS, and output.
+///
+/// The indices appearing in all three places are referred to here as the "stack" indices.
+/// For example, in the contraction `ijk,ikl->ijl`, `i` would be the (only) "stack" index.
+/// This contraction is an instance of batch matrix multiplication. The LHS and RHS are both
+/// 3-D tensors and the `i`th (2-D) subview of the output is the matrix product of the `i`th
+/// subview of the LHS matrix-multiplied by the `i`th subview of the RHS.
+///
+/// This is the most general contraction and in theory could handle all pairwise contractions,
+/// but is less performant than special-casing when there are no "stack" indices. It is also
+/// currently the only case that requires `.outer_iter_mut()` (which might make parallelizing
+/// operations more difficult).
 #[derive(Clone, Debug)]
 pub struct StackedTensordotGeneral {
     lhs_permutation: Permutation,
