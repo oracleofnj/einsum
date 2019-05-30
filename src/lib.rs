@@ -20,6 +20,150 @@
 //! contraction. Examples include matrix multiplication, matrix trace, vector dot product,
 //! tensor Hadamard [element-wise] product, axis permutation, outer product, batch
 //! matrix multiplication, bilinear transformations, and many more.
+//!
+//! Examples (deliberately similar to [numpy's documentation](https://docs.scipy.org/doc/numpy/reference/generated/numpy.einsum.html)):
+//!
+//! ```
+//! # use ndarray_einsum_beta::*;
+//! # use ndarray::prelude::*;
+//! let a: Array2<f64> = Array::range(0., 25., 1.)
+//!     .into_shape((5,5,)).unwrap();
+//! let b: Array1<f64> = Array::range(0., 5., 1.);
+//! let c: Array2<f64> = Array::range(0., 6., 1.)
+//!     .into_shape((2,3,)).unwrap();
+//! let d: Array2<f64> = Array::range(0., 12., 1.)
+//!     .into_shape((3,4,)).unwrap();
+//! ```
+//!
+//! Trace of a matrix
+//! ```
+//! # use ndarray_einsum_beta::*;
+//! # use ndarray::prelude::*;
+//! # let a: Array2<f64> = Array::range(0., 25., 1.)
+//! #     .into_shape((5,5,)).unwrap();
+//! # let b: Array1<f64> = Array::range(0., 5., 1.);
+//! # let c: Array2<f64> = Array::range(0., 6., 1.)
+//! #     .into_shape((2,3,)).unwrap();
+//! # let d: Array2<f64> = Array::range(0., 12., 1.)
+//! #     .into_shape((3,4,)).unwrap();
+//! assert_eq!(
+//!     einsum("ii", &[&a]).unwrap(),
+//!     arr0(60.).into_dyn()
+//! );
+//! assert_eq!(
+//!     einsum("ii", &[&a]).unwrap(),
+//!     arr0(a.diag().sum()).into_dyn()
+//! );
+//! ```
+//!
+//! Extract the diagonal
+//! ```
+//! # use ndarray_einsum_beta::*;
+//! # use ndarray::prelude::*;
+//! # let a: Array2<f64> = Array::range(0., 25., 1.)
+//! #     .into_shape((5,5,)).unwrap();
+//! # let b: Array1<f64> = Array::range(0., 5., 1.);
+//! # let c: Array2<f64> = Array::range(0., 6., 1.)
+//! #     .into_shape((2,3,)).unwrap();
+//! # let d: Array2<f64> = Array::range(0., 12., 1.)
+//! #     .into_shape((3,4,)).unwrap();
+//! assert_eq!(
+//!     einsum("ii->i", &[&a]).unwrap(),
+//!     arr1(&[0., 6., 12., 18., 24.]).into_dyn()
+//! );
+//! assert_eq!(
+//!     einsum("ii->i", &[&a]).unwrap(),
+//!     a.diag().into_dyn()
+//! );
+//!
+//! ```
+//!
+//! Sum over an axis
+//! ```
+//! # use ndarray_einsum_beta::*;
+//! # use ndarray::prelude::*;
+//! # let a: Array2<f64> = Array::range(0., 25., 1.)
+//! #     .into_shape((5,5,)).unwrap();
+//! # let b: Array1<f64> = Array::range(0., 5., 1.);
+//! # let c: Array2<f64> = Array::range(0., 6., 1.)
+//! #     .into_shape((2,3,)).unwrap();
+//! # let d: Array2<f64> = Array::range(0., 12., 1.)
+//! #     .into_shape((3,4,)).unwrap();
+//! assert_eq!(
+//!     einsum("ij->i", &[&a]).unwrap(),
+//!     arr1(&[10., 35., 60., 85., 110.]).into_dyn()
+//! );
+//! assert_eq!(
+//!     einsum("ij->i", &[&a]).unwrap(),
+//!     a.sum_axis(Axis(1)).into_dyn()
+//! );
+//!
+//! ```
+//!
+//! Compute matrix transpose
+//! ```
+//! # use ndarray_einsum_beta::*;
+//! # use ndarray::prelude::*;
+//! # let a: Array2<f64> = Array::range(0., 25., 1.)
+//! #     .into_shape((5,5,)).unwrap();
+//! # let b: Array1<f64> = Array::range(0., 5., 1.);
+//! # let c: Array2<f64> = Array::range(0., 6., 1.)
+//! #     .into_shape((2,3,)).unwrap();
+//! # let d: Array2<f64> = Array::range(0., 12., 1.)
+//! #     .into_shape((3,4,)).unwrap();
+//! assert_eq!(
+//!     einsum("ji", &[&c]).unwrap(),
+//!     c.t().into_dyn()
+//! );
+//! assert_eq!(
+//!     einsum("ji", &[&c]).unwrap(),
+//!     arr2(&[[0., 3.], [1., 4.], [2., 5.]]).into_dyn()
+//! );
+//! assert_eq!(
+//!     einsum("ji", &[&c]).unwrap(),
+//!     einsum("ij->ji", &[&c]).unwrap()
+//! );
+//!
+//! ```
+//!
+//! Multiply two matrices
+//! ```
+//! # use ndarray_einsum_beta::*;
+//! # use ndarray::prelude::*;
+//! # let a: Array2<f64> = Array::range(0., 25., 1.)
+//! #     .into_shape((5,5,)).unwrap();
+//! # let b: Array1<f64> = Array::range(0., 5., 1.);
+//! # let c: Array2<f64> = Array::range(0., 6., 1.)
+//! #     .into_shape((2,3,)).unwrap();
+//! # let d: Array2<f64> = Array::range(0., 12., 1.)
+//! #     .into_shape((3,4,)).unwrap();
+//! assert_eq!(
+//!     einsum("ij,jk->ik", &[&c, &d]).unwrap(),
+//!     c.dot(&d).into_dyn()
+//! );
+//! ```
+//!
+//! Compute the path separately from the result
+//! ```
+//! # use ndarray_einsum_beta::*;
+//! # use ndarray::prelude::*;
+//! # let a: Array2<f64> = Array::range(0., 25., 1.)
+//! #     .into_shape((5,5,)).unwrap();
+//! # let b: Array1<f64> = Array::range(0., 5., 1.);
+//! # let c: Array2<f64> = Array::range(0., 6., 1.)
+//! #     .into_shape((2,3,)).unwrap();
+//! # let d: Array2<f64> = Array::range(0., 12., 1.)
+//! #     .into_shape((3,4,)).unwrap();
+//! let path = einsum_path(
+//!     "ij,jk->ik",
+//!     &[&c, &d],
+//!     OptimizationMethod::Naive
+//! ).unwrap();
+//! assert_eq!(
+//!     path.contract_operands(&[&c, &d]),
+//!     c.dot(&d).into_dyn()
+//! );
+//! ```
 use std::collections::HashMap;
 
 use ndarray::prelude::*;
@@ -27,8 +171,7 @@ use ndarray::{Data, IxDyn, LinalgScalar};
 
 mod validation;
 pub use validation::{
-    validate, validate_and_optimize_order, validate_and_size, Contraction,
-    SizedContraction,
+    validate, validate_and_optimize_order, validate_and_size, Contraction, SizedContraction,
 };
 
 mod optimizers;
@@ -64,7 +207,6 @@ pub fn einsum_sc<A: LinalgScalar>(
 ) -> ArrayD<A> {
     sized_contraction.contract_operands(operands)
 }
-
 
 /// Create a [SizedContraction](struct.SizedContraction.html), optimize the contraction order, and compile the result into an [EinsumPath](struct.EinsumPath.html).
 pub fn einsum_path<A>(

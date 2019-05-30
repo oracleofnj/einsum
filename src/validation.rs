@@ -204,17 +204,6 @@ impl OutputSizeMethods for OutputSize {
 /// Note that output_size is a misnomer (to be changed); it contains all the axis lengths,
 /// including the ones that will be contracted (i.e. not just the ones in
 /// contraction.output_indices).
-///
-/// ```
-/// # use ndarray_einsum_beta::*;
-/// # use ndarray::prelude::*;
-/// let m1: Array2<f64> = Array::zeros((2, 3));
-/// let m2: Array2<f64> = Array::zeros((3, 4));
-/// let sc = validate_and_size("ij,jk->ik", &[&m1, &m2]).unwrap();
-/// assert_eq!(sc.output_size[&'i'], 2);
-/// assert_eq!(sc.output_size[&'k'], 4);
-/// assert_eq!(sc.output_size[&'j'], 3);
-/// ```
 #[derive(Debug, Clone)]
 pub struct SizedContraction {
     pub contraction: Contraction,
@@ -226,6 +215,17 @@ impl SizedContraction {
     /// indices. Not intended for general use; used internally in the crate when compiling
     /// a multi-tensor contraction into a set of tensor simplifications (a.k.a. singleton
     /// contractions) and pairwise contractions.
+    ///
+    /// ```
+    /// # use ndarray_einsum_beta::*;
+    /// # use ndarray::prelude::*;
+    /// let m1: Array3<f64> = Array::zeros((2, 2, 3));
+    /// let m2: Array2<f64> = Array::zeros((3, 4));
+    /// let sc = SizedContraction::new("iij,jk->ik", &[&m1, &m2]).unwrap();
+    /// let lhs_simplification = sc.subset(&[vec!['i','i','j']], &['i','j']).unwrap();
+    /// let diagonalized_m1 = lhs_simplification.contract_operands(&[&m1]);
+    /// assert_eq!(diagonalized_m1.shape(), &[2, 3]);
+    /// ```
     pub fn subset(
         &self,
         new_operand_indices: &[Vec<char>],
@@ -275,6 +275,17 @@ impl SizedContraction {
 
     /// Create a SizedContraction from an already-created Contraction and a list
     /// of operands.
+    /// ```
+    /// # use ndarray_einsum_beta::*;
+    /// # use ndarray::prelude::*;
+    /// let m1: Array2<f64> = Array::zeros((2, 3));
+    /// let m2: Array2<f64> = Array::zeros((3, 4));
+    /// let c = Contraction::new("ij,jk->ik").unwrap();
+    /// let sc = SizedContraction::from_contraction_and_operands(&c, &[&m1, &m2]).unwrap();
+    /// assert_eq!(sc.output_size[&'i'], 2);
+    /// assert_eq!(sc.output_size[&'k'], 4);
+    /// assert_eq!(sc.output_size[&'j'], 3);
+    /// ```
     pub fn from_contraction_and_operands<A>(
         contraction: &Contraction,
         operands: &[&dyn ArrayLike<A>],
@@ -284,8 +295,19 @@ impl SizedContraction {
         SizedContraction::from_contraction_and_shapes(contraction, &operand_shapes)
     }
 
-    /// Create a SizedContraction from an already-created Contraction and a slice
+    /// Create a SizedContraction from an `einsum`-formatted input string and a slice
     /// of `Vec<usize>`s containing the shapes of each operand.
+    /// ```
+    /// # use ndarray_einsum_beta::*;
+    /// # use ndarray::prelude::*;
+    /// let sc = SizedContraction::from_string_and_shapes(
+    ///     "ij,jk->ik",
+    ///     &[vec![2, 3], vec![3, 4]]
+    /// ).unwrap();
+    /// assert_eq!(sc.output_size[&'i'], 2);
+    /// assert_eq!(sc.output_size[&'k'], 4);
+    /// assert_eq!(sc.output_size[&'j'], 3);
+    /// ```
     pub fn from_string_and_shapes(
         input_string: &str,
         operand_shapes: &[Vec<usize>],
@@ -296,6 +318,17 @@ impl SizedContraction {
 
     /// Create a SizedContraction from an `einsum`-formatted input string and a list
     /// of operands.
+    ///
+    /// ```
+    /// # use ndarray_einsum_beta::*;
+    /// # use ndarray::prelude::*;
+    /// let m1: Array2<f64> = Array::zeros((2, 3));
+    /// let m2: Array2<f64> = Array::zeros((3, 4));
+    /// let sc = SizedContraction::new("ij,jk->ik", &[&m1, &m2]).unwrap();
+    /// assert_eq!(sc.output_size[&'i'], 2);
+    /// assert_eq!(sc.output_size[&'k'], 4);
+    /// assert_eq!(sc.output_size[&'j'], 3);
+    /// ```
     pub fn new<A>(
         input_string: &str,
         operands: &[&dyn ArrayLike<A>],

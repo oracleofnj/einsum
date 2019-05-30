@@ -5,7 +5,7 @@
 Cargo.toml:
 
 ```
-ndarray_einsum_beta = "0.3.1"
+ndarray_einsum_beta = "0.3.2"
 ```
 
 src/main.rs:
@@ -20,6 +20,10 @@ fn main() {
     println!("{:?}", einsum("i,ij->j", &[&m1, &m2]));
 }
 ```
+
+## Documentation
+
+[Documentation Site](https://docs.rs/ndarray_einsum_beta/)
 
 ## Better documentation to follow
 
