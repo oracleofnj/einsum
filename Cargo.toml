@@ -1,6 +1,6 @@
 [package]
 name = "ndarray_einsum_beta"
-version = "0.3.2"
+version = "0.4.0"
 authors = ["oracleofnj <jared.samet@aya.yale.edu>"]
 edition = "2018"
 license = "Apache-2.0"
@@ -18,9 +18,6 @@ num-traits = "0.2.6"
 [dev-dependencies]
 ndarray-rand = "0.9.0"
 rand="0.6"
-
-[lib]
-crate-type = ["cdylib", "rlib"]
 
 [profile.release]
 debug = true

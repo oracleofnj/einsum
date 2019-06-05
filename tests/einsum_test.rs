@@ -648,6 +648,66 @@ fn deduped_handles_matrix_product_1() {
 }
 
 #[test]
+fn it_handles_stacked_matrix_product_1() {
+    let lhs = rand_array((4, 2, 5));
+    let rhs = rand_array((4, 5, 3));
+
+    let mut correct_answer: Array3<f64> = Array::zeros((4, 2, 3));
+    for n in 0..4 {
+        for i in 0..2 {
+            for j in 0..5 {
+                for k in 0..3 {
+                    correct_answer[[n, i, k]] += lhs[[n, i, j]] * rhs[[n, j, k]];
+                }
+            }
+        }
+    }
+    let ep = einsum_path("nij,njk->nik", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
+    assert!(correct_answer.all_close(&dotted, TOL));
+}
+
+#[test]
+fn it_handles_stacked_matrix_product_2() {
+    let lhs = rand_array((4, 5, 2));
+    let rhs = rand_array((4, 5, 3));
+
+    let mut correct_answer: Array3<f64> = Array::zeros((4, 2, 3));
+    for n in 0..4 {
+        for i in 0..2 {
+            for j in 0..5 {
+                for k in 0..3 {
+                    correct_answer[[n, i, k]] += lhs[[n, j, i]] * rhs[[n, j, k]];
+                }
+            }
+        }
+    }
+    let ep = einsum_path("nji,njk->nik", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
+    assert!(correct_answer.all_close(&dotted, TOL));
+}
+
+#[test]
+fn it_handles_stacked_matrix_product_3() {
+    let lhs = rand_array((5, 2, 4));
+    let rhs = rand_array((4, 5, 3));
+
+    let mut correct_answer: Array3<f64> = Array::zeros((4, 2, 3));
+    for n in 0..4 {
+        for i in 0..2 {
+            for j in 0..5 {
+                for k in 0..3 {
+                    correct_answer[[n, i, k]] += lhs[[j, i, n]] * rhs[[n, j, k]];
+                }
+            }
+        }
+    }
+    let ep = einsum_path("jin,njk->nik", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
+    let dotted = ep.contract_operands(&[&lhs, &rhs]);
+    assert!(correct_answer.all_close(&dotted, TOL));
+}
+
+#[test]
 fn deduped_handles_matrix_product_2() {
     let lhs = rand_array((2, 3));
     let rhs = rand_array((4, 3));

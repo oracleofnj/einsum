@@ -833,6 +833,9 @@ impl StackedTensordotGeneral {
         let mut lhs_contracted_axes = Vec::new();
         let mut rhs_contracted_axes = Vec::new();
         let mut intermediate_indices = Vec::new();
+        let mut lhs_uncontracted_shape = Vec::new();
+        let mut rhs_uncontracted_shape = Vec::new();
+        let mut contracted_shape = Vec::new();
 
         lhs_output_shape.push(1);
         rhs_output_shape.push(1);
@@ -853,12 +856,12 @@ impl StackedTensordotGeneral {
                 (Some(lhs_pos), None) => {
                     lhs_outer_axes.push(lhs_pos);
                     lhs_outer_indices.push(output_char);
-                    lhs_output_shape.push(sc.output_size[&output_char]);
+                    lhs_uncontracted_shape.push(sc.output_size[&output_char]);
                 }
                 (None, Some(rhs_pos)) => {
                     rhs_outer_axes.push(rhs_pos);
                     rhs_outer_indices.push(output_char);
-                    rhs_output_shape.push(sc.output_size[&output_char]);
+                    rhs_uncontracted_shape.push(sc.output_size[&output_char]);
                 }
                 (None, None) => {
                     panic!() // Output char must be either in lhs or rhs
@@ -880,8 +883,7 @@ impl StackedTensordotGeneral {
                         .position(|&rhs_char| rhs_char == lhs_char)
                         .unwrap(),
                 );
-                lhs_output_shape.push(sc.output_size[&lhs_char]);
-                rhs_output_shape.push(sc.output_size[&lhs_char]);
+                contracted_shape.push(sc.output_size[&lhs_char]);
             }
         }
         // What order do we want the axes in?
@@ -891,10 +893,15 @@ impl StackedTensordotGeneral {
 
         lhs_order.append(&mut lhs_stack_axes.clone());
         lhs_order.append(&mut lhs_outer_axes.clone());
+        lhs_output_shape.append(&mut lhs_uncontracted_shape);
         lhs_order.append(&mut lhs_contracted_axes.clone());
+        lhs_output_shape.append(&mut contracted_shape.clone());
+
         rhs_order.append(&mut rhs_stack_axes.clone());
         rhs_order.append(&mut rhs_contracted_axes.clone());
+        rhs_output_shape.append(&mut contracted_shape);
         rhs_order.append(&mut rhs_outer_axes.clone());
+        rhs_output_shape.append(&mut rhs_uncontracted_shape);
 
         // What order will the intermediate output indices be in?
         // Stack indices, lhs outer indices, rhs outer indices
