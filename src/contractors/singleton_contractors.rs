@@ -33,7 +33,7 @@ use crate::{Contraction, SizedContraction};
 pub struct Identity {}
 
 impl Identity {
-    pub fn new() -> Self {
+    pub fn new(_sc: &SizedContraction) -> Self {
         Identity {}
     }
 }

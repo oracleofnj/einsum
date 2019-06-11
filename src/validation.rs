@@ -356,6 +356,35 @@ impl SizedContraction {
         let cpc = EinsumPath::new(&self);
         cpc.contract_operands(operands)
     }
+
+    /// Show as an `einsum`-formatted string.
+    ///
+    /// ```
+    /// # use ndarray_einsum_beta::*;
+    /// # use ndarray::prelude::*;
+    /// let m1: Array2<f64> = Array::zeros((2, 3));
+    /// let m2: Array2<f64> = Array::zeros((3, 4));
+    /// let sc = validate_and_size("ij,jk", &[&m1, &m2]).unwrap();
+    /// assert_eq!(sc.as_einsum_string(), "ij,jk->ik");
+    /// ```
+    pub fn as_einsum_string(&self) -> String {
+        assert!(self.contraction.operand_indices.len() > 0);
+        let mut s: String = self.contraction.operand_indices[0]
+            .iter()
+            .cloned()
+            .collect();
+        for op in (&self.contraction.operand_indices[1..]).iter() {
+            s.push(',');
+            for &c in op.iter() {
+                s.push(c);
+            }
+        }
+        s.push_str("->");
+        for &c in self.contraction.output_indices.iter() {
+            s.push(c);
+        }
+        s
+    }
 }
 
 /// Runs an input string through a regex and convert it to an EinsumParse.

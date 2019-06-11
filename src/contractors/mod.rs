@@ -138,7 +138,7 @@ impl<A> SingletonContraction<A> {
 
         match singleton_summary.get_strategy() {
             SingletonMethod::Identity => SingletonContraction {
-                op: Box::new(Identity::new()),
+                op: Box::new(Identity::new(sc)),
             },
             SingletonMethod::Permutation => SingletonContraction {
                 op: Box::new(Permutation::new(sc)),
@@ -182,6 +182,7 @@ type SingletonSimplificationMethod<A> = Option<Box<dyn SingletonContractor<A>>>;
 struct SimplificationMethodAndOutput<A> {
     method: SingletonSimplificationMethod<A>,
     new_indices: Vec<char>,
+    einsum_string: Option<String>,
 }
 
 impl<A> SimplificationMethodAndOutput<A> {
@@ -242,9 +243,16 @@ impl<A> SimplificationMethodAndOutput<A> {
             this_input_indices.to_vec()
         };
 
+        let einsum_string = if method.is_some() {
+            Some(simplification_sc.as_einsum_string())
+        } else {
+            None
+        };
+
         SimplificationMethodAndOutput {
             method,
             new_indices,
+            einsum_string,
         }
     }
 }
@@ -282,7 +290,9 @@ impl<A> Debug for SimplificationMethodAndOutput<A> {
 /// the optimizer could choose a different order.
 pub struct PairContraction<A> {
     lhs_simplification: SingletonSimplificationMethod<A>,
+    lhs_einsum_string: Option<String>,
     rhs_simplification: SingletonSimplificationMethod<A>,
+    rhs_einsum_string: Option<String>,
     op: Box<dyn PairContractor<A>>,
 }
 
@@ -296,6 +306,7 @@ impl<A> PairContraction<A> {
         let SimplificationMethodAndOutput {
             method: lhs_simplification,
             new_indices: new_lhs_indices,
+            einsum_string: lhs_einsum_string,
         } = SimplificationMethodAndOutput::from_indices_and_sizes(
             &lhs_indices,
             &rhs_indices,
@@ -305,6 +316,7 @@ impl<A> PairContraction<A> {
         let SimplificationMethodAndOutput {
             method: rhs_simplification,
             new_indices: new_rhs_indices,
+            einsum_string: rhs_einsum_string,
         } = SimplificationMethodAndOutput::from_indices_and_sizes(
             &rhs_indices,
             &lhs_indices,
@@ -356,7 +368,9 @@ impl<A> PairContraction<A> {
         };
         PairContraction {
             lhs_simplification,
+            lhs_einsum_string,
             rhs_simplification,
+            rhs_einsum_string,
             op,
         }
     }
@@ -394,7 +408,7 @@ impl<A> Debug for PairContraction<A> {
         write!(
             f,
             "lhs_simplification: {:?}, rhs_simplification: {:?}, op: {:?}",
-            self.lhs_simplification, self.rhs_simplification, self.op
+            self.lhs_einsum_string, self.rhs_einsum_string, self.op
         )
     }
 }
