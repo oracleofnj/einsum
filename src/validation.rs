@@ -30,6 +30,10 @@ use ndarray::LinalgScalar;
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 
+#[cfg(feature = "serde")]
+#[macro_use]
+extern crate serde;
+
 /// The result of running an `einsum`-formatted string through the regex.
 #[derive(Debug)]
 struct EinsumParse {
@@ -51,6 +55,7 @@ struct EinsumParse {
 /// assert_eq!(contraction.output_indices, vec!['i', 'k']);
 /// assert_eq!(contraction.summation_indices, vec!['j']);
 /// ```
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone)]
 pub struct Contraction {
     /// A vector with as many elements as input operands, where each
@@ -204,6 +209,7 @@ impl OutputSizeMethods for OutputSize {
 /// Note that output_size is a misnomer (to be changed); it contains all the axis lengths,
 /// including the ones that will be contracted (i.e. not just the ones in
 /// contraction.output_indices).
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone)]
 pub struct SizedContraction {
     pub contraction: Contraction,
