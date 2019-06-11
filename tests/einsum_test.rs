@@ -4,40 +4,205 @@ use ndarray_rand::RandomExt;
 use rand::distributions::Uniform;
 const TOL: f64 = 1e-10;
 
-// TODO: Make these real tests
-fn _test_parses() {
-    for test_string in &vec![
-        // Explicit
-        "i->",
-        "ij->",
-        "i->i",
-        "ij,ij->ij",
-        "ij,ij->",
-        "ij,kl->",
-        "ij,jk->ik",
-        "ijk,jkl,klm->im",
-        "ij,jk->ki",
-        "ij,ja->ai",
-        "ij,ja->ia",
-        "ii->i",
-        // Implicit
-        "ij,k",
-        "i",
-        "ii",
-        "ijj",
-        "i,j,klm,nop",
-        "ij,jk",
-        "ij,ja",
-        // Illegal
-        "->i",
-        "i,",
-        "->",
-        "i,,,j->k",
-        // Legal parse but illegal outputs
-        "i,j,k,l,m->p",
-        "i,j->ijj",
-    ] {
-        println!("Input string: {}", test_string);
+#[test]
+fn tp1() {
+    let contraction = Contraction::new("i->").unwrap();
+    assert_eq!(contraction.operand_indices, &[vec!['i']]);
+    assert_eq!(contraction.output_indices.len(), 0);
+    assert_eq!(contraction.summation_indices, &['i']);
+}
+
+#[test]
+fn tp2() {
+    let contraction = Contraction::new("ij->").unwrap();
+    assert_eq!(contraction.operand_indices, &[vec!['i', 'j']]);
+    assert_eq!(contraction.output_indices.len(), 0);
+    assert_eq!(contraction.summation_indices, &['i', 'j']);
+}
+
+#[test]
+fn tp3() {
+    let contraction = Contraction::new("i->i").unwrap();
+    assert_eq!(contraction.operand_indices, &[vec!['i']]);
+    assert_eq!(contraction.output_indices, &['i']);
+    assert_eq!(contraction.summation_indices.len(), 0);
+}
+
+#[test]
+fn tp4() {
+    let contraction = Contraction::new("ij,ij->ij").unwrap();
+    assert_eq!(
+        contraction.operand_indices,
+        &[vec!['i', 'j'], vec!['i', 'j']]
+    );
+    assert_eq!(contraction.output_indices, &['i', 'j']);
+    assert_eq!(contraction.summation_indices.len(), 0);
+}
+
+#[test]
+fn tp5() {
+    let contraction = Contraction::new("ij,ij->").unwrap();
+    assert_eq!(
+        contraction.operand_indices,
+        &[vec!['i', 'j'], vec!['i', 'j']]
+    );
+    assert_eq!(contraction.output_indices.len(), 0);
+    assert_eq!(contraction.summation_indices, &['i', 'j']);
+}
+
+#[test]
+fn tp6() {
+    let contraction = Contraction::new("ij,kl->").unwrap();
+    assert_eq!(
+        contraction.operand_indices,
+        &[vec!['i', 'j'], vec!['k', 'l']]
+    );
+    assert_eq!(contraction.output_indices.len(), 0);
+    assert_eq!(contraction.summation_indices, &['i', 'j', 'k', 'l']);
+}
+
+#[test]
+fn tp7() {
+    let contraction = Contraction::new("ij,jk->ik").unwrap();
+    assert_eq!(
+        contraction.operand_indices,
+        &[vec!['i', 'j'], vec!['j', 'k']]
+    );
+    assert_eq!(contraction.output_indices, &['i', 'k']);
+    assert_eq!(contraction.summation_indices, &['j']);
+}
+
+#[test]
+fn tp8() {
+    let contraction = Contraction::new("ijk,jkl,klm->im").unwrap();
+    assert_eq!(
+        contraction.operand_indices,
+        &[
+            vec!['i', 'j', 'k'],
+            vec!['j', 'k', 'l'],
+            vec!['k', 'l', 'm']
+        ]
+    );
+    assert_eq!(contraction.output_indices, &['i', 'm']);
+    assert_eq!(contraction.summation_indices, &['j', 'k', 'l']);
+}
+
+#[test]
+fn tp9() {
+    let contraction = Contraction::new("ij,jk->ki").unwrap();
+    assert_eq!(
+        contraction.operand_indices,
+        &[vec!['i', 'j'], vec!['j', 'k']]
+    );
+    assert_eq!(contraction.output_indices, &['k', 'i']);
+    assert_eq!(contraction.summation_indices, &['j']);
+}
+
+#[test]
+fn tp10() {
+    let contraction = Contraction::new("ij,ja->ai").unwrap();
+    assert_eq!(
+        contraction.operand_indices,
+        &[vec!['i', 'j'], vec!['j', 'a']]
+    );
+    assert_eq!(contraction.output_indices, &['a', 'i']);
+    assert_eq!(contraction.summation_indices, &['j']);
+}
+
+#[test]
+fn tp11() {
+    let contraction = Contraction::new("ii->i").unwrap();
+    assert_eq!(contraction.operand_indices, &[vec!['i', 'i']]);
+    assert_eq!(contraction.output_indices, &['i']);
+    assert_eq!(contraction.summation_indices.len(), 0);
+}
+
+#[test]
+fn tp12() {
+    let contraction = Contraction::new("ij,k").unwrap();
+    assert_eq!(contraction.operand_indices, &[vec!['i', 'j'], vec!['k']]);
+    assert_eq!(contraction.output_indices, &['i', 'j', 'k']);
+    assert_eq!(contraction.summation_indices.len(), 0);
+}
+
+#[test]
+fn tp13() {
+    let contraction = Contraction::new("i").unwrap();
+    assert_eq!(contraction.operand_indices, &[vec!['i']]);
+    assert_eq!(contraction.output_indices, &['i']);
+    assert_eq!(contraction.summation_indices.len(), 0);
+}
+
+#[test]
+fn tp14() {
+    let contraction = Contraction::new("ii").unwrap();
+    assert_eq!(contraction.operand_indices, &[vec!['i', 'i']]);
+    assert_eq!(contraction.output_indices.len(), 0);
+    assert_eq!(contraction.summation_indices, &['i']);
+}
+
+#[test]
+fn tp15() {
+    let contraction = Contraction::new("ijj").unwrap();
+    assert_eq!(contraction.operand_indices, &[vec!['i', 'j', 'j']]);
+    assert_eq!(contraction.output_indices, &['i']);
+    assert_eq!(contraction.summation_indices, &['j']);
+}
+
+#[test]
+fn tp16() {
+    let contraction = Contraction::new("i,j,klm,nop").unwrap();
+    assert_eq!(
+        contraction.operand_indices,
+        &[
+            vec!['i'],
+            vec!['j'],
+            vec!['k', 'l', 'm'],
+            vec!['n', 'o', 'p']
+        ]
+    );
+    assert_eq!(
+        contraction.output_indices,
+        &['i', 'j', 'k', 'l', 'm', 'n', 'o', 'p',]
+    );
+    assert_eq!(contraction.summation_indices.len(), 0);
+}
+
+#[test]
+fn tp17() {
+    let contraction = Contraction::new("ij,jk").unwrap();
+    assert_eq!(
+        contraction.operand_indices,
+        &[vec!['i', 'j'], vec!['j', 'k']]
+    );
+    assert_eq!(contraction.output_indices, &['i', 'k']);
+    assert_eq!(contraction.summation_indices, &['j']);
+}
+
+#[test]
+fn tp18() {
+    let contraction = Contraction::new("ij,ja").unwrap();
+    assert_eq!(
+        contraction.operand_indices,
+        &[vec!['i', 'j'], vec!['j', 'a']]
+    );
+    assert_eq!(contraction.output_indices, &['a', 'i']);
+    assert_eq!(contraction.summation_indices, &['j']);
+}
+
+#[test]
+fn bad_parses_1() {
+    for s in vec!["->i", "i,", "->", "i,,,j->k"].iter() {
+        let contraction_result = Contraction::new(s);
+        assert!(contraction_result.is_err());
+    }
+}
+
+#[test]
+fn bad_outputs_1() {
+    for s in vec!["i,j,k,l,m->p", "i,j->ijj"].iter() {
+        let contraction_result = Contraction::new(s);
+        assert!(contraction_result.is_err());
     }
 }
 

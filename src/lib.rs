@@ -203,7 +203,7 @@ where
 /// Wrapper around [SizedContraction::contract_operands](struct.SizedContraction.html#method.contract_operands).
 pub fn einsum_sc<A: LinalgScalar>(
     sized_contraction: &SizedContraction,
-    operands: &[&ArrayLike<A>],
+    operands: &[&dyn ArrayLike<A>],
 ) -> ArrayD<A> {
     sized_contraction.contract_operands(operands)
 }
