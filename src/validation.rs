@@ -31,8 +31,7 @@ use regex::Regex;
 use std::collections::{HashMap, HashSet};
 
 #[cfg(feature = "serde")]
-#[macro_use]
-extern crate serde;
+use serde::{Deserialize, Serialize};
 
 /// The result of running an `einsum`-formatted string through the regex.
 #[derive(Debug)]
