@@ -26,9 +26,13 @@ use ndarray::LinalgScalar;
 use super::{SingletonContractor, SingletonViewer};
 use crate::{Contraction, SizedContraction};
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 /// Returns a view or clone of the input tensor.
 ///
 /// Example: `ij->ij`
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub struct Identity {}
 
@@ -61,6 +65,7 @@ impl<A> SingletonContractor<A> for Identity {
 /// Permutes the axes of the input tensor and returns a view or clones the elements.
 ///
 /// Example: `ij->ji`
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub struct Permutation {
     permutation: Vec<usize>,
@@ -122,6 +127,7 @@ impl<A> SingletonContractor<A> for Permutation {
 /// Sums across the elements of the input tensor that don't appear in the output tensor.
 ///
 /// Example: `ij->i`
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub struct Summation {
     orig_axis_list: Vec<usize>,
@@ -172,6 +178,7 @@ impl<A> SingletonContractor<A> for Summation {
 ///
 /// 1. `ii->i`
 /// 2. `iij->ji`
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub struct Diagonalization {
     input_to_output_mapping: Vec<usize>,
@@ -259,6 +266,7 @@ impl<A> SingletonContractor<A> for Diagonalization {
 /// Permutes the elements of the input tensor and sums across elements that don't appear in the output.
 ///
 /// Example: `ijk->kj`
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub struct PermutationAndSummation {
     permutation: Permutation,
@@ -314,7 +322,8 @@ impl<A> SingletonContractor<A> for PermutationAndSummation {
 /// Examples:
 ///
 /// 1. `iijk->ik` (Diagonalizes the `i` axes and sums over `j`)
-/// 2. `jijik->ki` (Diagonalizes `i` and `j` and sums over `j` after diagonalizagtion)
+/// 2. `jijik->ki` (Diagonalizes `i` and `j` and sums over `j` after diagonalization)
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub struct DiagonalizationAndSummation {
     diagonalization: Diagonalization,

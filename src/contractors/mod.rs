@@ -62,6 +62,9 @@ use pair_contractors::{
 mod strategies;
 use strategies::{PairMethod, PairSummary, SingletonMethod, SingletonSummary};
 
+#[cfg(feature = "serde")]
+use serde::Serialize;
+
 /// `let new_view = obj.view_singleton(tensor_view);`
 ///
 /// This trait represents contractions that can be performed by returning a view of the original
@@ -128,32 +131,31 @@ pub trait PairContractor<A>: Debug {
 /// For example, the contraction `iij->i` will be performed by assigning a `Box`ed
 /// `DiagonalizationAndSummation` to `op`. The contraction `ijk->kij` will be performed
 /// by assigning a `Box`ed `Permutation` to `op`.
+#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct SingletonContraction<A> {
+    method: SingletonMethod,
+    #[cfg_attr(feature = "serde", serde(skip))]
     op: Box<dyn SingletonContractor<A>>,
 }
 
 impl<A> SingletonContraction<A> {
     pub fn new(sc: &SizedContraction) -> Self {
         let singleton_summary = SingletonSummary::new(&sc);
+        let method = singleton_summary.get_strategy();
 
-        match singleton_summary.get_strategy() {
-            SingletonMethod::Identity => SingletonContraction {
-                op: Box::new(Identity::new(sc)),
-            },
-            SingletonMethod::Permutation => SingletonContraction {
-                op: Box::new(Permutation::new(sc)),
-            },
-            SingletonMethod::Summation => SingletonContraction {
-                op: Box::new(Summation::new(sc)),
-            },
-            SingletonMethod::Diagonalization => SingletonContraction {
-                op: Box::new(Diagonalization::new(sc)),
-            },
-            SingletonMethod::PermutationAndSummation => SingletonContraction {
-                op: Box::new(PermutationAndSummation::new(sc)),
-            },
-            SingletonMethod::DiagonalizationAndSummation => SingletonContraction {
-                op: Box::new(DiagonalizationAndSummation::new(sc)),
+        SingletonContraction {
+            method,
+            op: match method {
+                SingletonMethod::Identity => Box::new(Identity::new(sc)),
+                SingletonMethod::Permutation => Box::new(Permutation::new(sc)),
+                SingletonMethod::Summation => Box::new(Summation::new(sc)),
+                SingletonMethod::Diagonalization => Box::new(Diagonalization::new(sc)),
+                SingletonMethod::PermutationAndSummation => {
+                    Box::new(PermutationAndSummation::new(sc))
+                }
+                SingletonMethod::DiagonalizationAndSummation => {
+                    Box::new(DiagonalizationAndSummation::new(sc))
+                }
             },
         }
     }
@@ -171,18 +173,22 @@ impl<A> SingletonContractor<A> for SingletonContraction<A> {
 
 impl<A> Debug for SingletonContraction<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "op: {:?}", self.op)
+        write!(
+            f,
+            "SingletonContraction {{ method: {:?}, op: {:?} }}",
+            self.method, self.op
+        )
     }
 }
 
-/// Alias for `Option<Box<dyn SingletonContractor<A>>>`. `None` if a tensor is already simplified.
-type SingletonSimplificationMethod<A> = Option<Box<dyn SingletonContractor<A>>>;
-
-/// Holds an `Option<Box<dyn SingletonContractor<A>>>` and the resulting simplified indices.
+/// Holds an `Box<dyn SingletonContractor<A>>` and the resulting simplified indices.
+#[cfg_attr(feature = "serde", derive(Serialize))]
 struct SimplificationMethodAndOutput<A> {
-    method: SingletonSimplificationMethod<A>,
+    method: SingletonMethod,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    op: Box<dyn SingletonContractor<A>>,
     new_indices: Vec<char>,
-    einsum_string: Option<String>,
+    einsum_string: String,
 }
 
 impl<A> SimplificationMethodAndOutput<A> {
@@ -194,7 +200,7 @@ impl<A> SimplificationMethodAndOutput<A> {
         other_input_indices: &[char],
         output_indices: &[char],
         orig_contraction: &SizedContraction,
-    ) -> Self {
+    ) -> Option<Self> {
         let this_input_uniques: HashSet<char> = this_input_indices.iter().cloned().collect();
         let other_input_uniques: HashSet<char> = other_input_indices.iter().cloned().collect();
         let output_uniques: HashSet<char> = output_indices.iter().cloned().collect();
@@ -207,66 +213,33 @@ impl<A> SimplificationMethodAndOutput<A> {
             .intersection(&other_and_output)
             .cloned()
             .collect();
-        let simplified_indices: Vec<char> = desired_uniques.iter().cloned().collect();
+        let new_indices: Vec<char> = desired_uniques.iter().cloned().collect();
 
         let simplification_sc = orig_contraction
-            .subset(&[this_input_indices.to_vec()], &simplified_indices)
+            .subset(&[this_input_indices.to_vec()], &new_indices)
             .unwrap();
 
-        let singleton_summary = SingletonSummary::new(&simplification_sc);
+        let SingletonContraction { method, op } = SingletonContraction::new(&simplification_sc);
 
-        let method: Option<Box<dyn SingletonContractor<A>>> = match singleton_summary.get_strategy()
-        {
-            SingletonMethod::Identity => None,
-            SingletonMethod::Permutation => None,
-            SingletonMethod::Summation => {
-                let summation = Summation::new(&simplification_sc);
-                Some(Box::new(summation))
-            }
-            SingletonMethod::Diagonalization => {
-                let diagonalization = Diagonalization::new(&simplification_sc);
-                Some(Box::new(diagonalization))
-            }
-            SingletonMethod::PermutationAndSummation => {
-                let permutation_and_summation = PermutationAndSummation::new(&simplification_sc);
-                Some(Box::new(permutation_and_summation))
-            }
-            SingletonMethod::DiagonalizationAndSummation => {
-                let diagonalization_and_summation =
-                    DiagonalizationAndSummation::new(&simplification_sc);
-                Some(Box::new(diagonalization_and_summation))
-            }
-        };
-        let new_indices = if method.is_some() {
-            simplified_indices
-        } else {
-            this_input_indices.to_vec()
-        };
-
-        let einsum_string = if method.is_some() {
-            Some(simplification_sc.as_einsum_string())
-        } else {
-            None
-        };
-
-        SimplificationMethodAndOutput {
-            method,
-            new_indices,
-            einsum_string,
+        match method {
+            SingletonMethod::Identity | SingletonMethod::Permutation => None,
+            _ => Some(SimplificationMethodAndOutput {
+                method,
+                op,
+                new_indices,
+                einsum_string: simplification_sc.as_einsum_string(),
+            }),
         }
     }
 }
 
 impl<A> Debug for SimplificationMethodAndOutput<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match &self.method {
-            Some(_) => write!(
-                f,
-                "method: Some({:?}), new_indices: {:?}",
-                &self.method, &self.new_indices
-            ),
-            None => write!(f, "None"),
-        }
+        write!(
+            f,
+            "SingletonContraction {{ method: {:?}, op: {:?}, new_indices: {:?}, einsum_string: {:?} }}",
+            self.method, self.op, self.new_indices, self.einsum_string
+        )
     }
 }
 
@@ -288,12 +261,14 @@ impl<A> Debug for SimplificationMethodAndOutput<A> {
 /// be either, it is generally not possible to know at compile time which specific PairContractor
 /// will be used to perform a given contraction, or even which contractions will be performed;
 /// the optimizer could choose a different order.
+#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct PairContraction<A> {
-    lhs_simplification: SingletonSimplificationMethod<A>,
-    lhs_einsum_string: Option<String>,
-    rhs_simplification: SingletonSimplificationMethod<A>,
-    rhs_einsum_string: Option<String>,
+    lhs_simplification: Option<SimplificationMethodAndOutput<A>>,
+    rhs_simplification: Option<SimplificationMethodAndOutput<A>>,
+    method: PairMethod,
+    #[cfg_attr(feature = "serde", serde(skip))]
     op: Box<dyn PairContractor<A>>,
+    simplified_einsum_string: String,
 }
 
 impl<A> PairContraction<A> {
@@ -303,35 +278,35 @@ impl<A> PairContraction<A> {
         let rhs_indices = &sc.contraction.operand_indices[1];
         let output_indices = &sc.contraction.output_indices;
 
-        let SimplificationMethodAndOutput {
-            method: lhs_simplification,
-            new_indices: new_lhs_indices,
-            einsum_string: lhs_einsum_string,
-        } = SimplificationMethodAndOutput::from_indices_and_sizes(
+        let lhs_simplification = SimplificationMethodAndOutput::from_indices_and_sizes(
             &lhs_indices,
             &rhs_indices,
             &output_indices,
             sc,
         );
-        let SimplificationMethodAndOutput {
-            method: rhs_simplification,
-            new_indices: new_rhs_indices,
-            einsum_string: rhs_einsum_string,
-        } = SimplificationMethodAndOutput::from_indices_and_sizes(
+        let rhs_simplification = SimplificationMethodAndOutput::from_indices_and_sizes(
             &rhs_indices,
             &lhs_indices,
             &output_indices,
             sc,
         );
+        let new_lhs_indices = match &lhs_simplification {
+            Some(ref s) => s.new_indices.clone(),
+            None => lhs_indices.clone(),
+        };
+        let new_rhs_indices = match &rhs_simplification {
+            Some(ref s) => s.new_indices.clone(),
+            None => rhs_indices.clone(),
+        };
 
         let reduced_sc = sc
             .subset(&[new_lhs_indices, new_rhs_indices], &output_indices)
             .unwrap();
 
         let pair_summary = PairSummary::new(&reduced_sc);
-        let pair_strategy = pair_summary.get_strategy();
+        let method = pair_summary.get_strategy();
 
-        let op: Box<dyn PairContractor<A>> = match pair_strategy {
+        let op: Box<dyn PairContractor<A>> = match method {
             PairMethod::HadamardProduct => {
                 // Never gets returned in current implementation
                 Box::new(HadamardProduct::new(&reduced_sc))
@@ -368,10 +343,10 @@ impl<A> PairContraction<A> {
         };
         PairContraction {
             lhs_simplification,
-            lhs_einsum_string,
             rhs_simplification,
-            rhs_einsum_string,
+            method,
             op,
+            simplified_einsum_string: reduced_sc.as_einsum_string(),
         }
     }
 }
@@ -391,13 +366,13 @@ impl<A> PairContractor<A> for PairContraction<A> {
             (None, None) => self.op.contract_pair(lhs, rhs),
             (Some(lhs_contraction), None) => self
                 .op
-                .contract_pair(&lhs_contraction.contract_singleton(lhs).view(), rhs),
+                .contract_pair(&lhs_contraction.op.contract_singleton(lhs).view(), rhs),
             (None, Some(rhs_contraction)) => self
                 .op
-                .contract_pair(lhs, &rhs_contraction.contract_singleton(rhs).view()),
+                .contract_pair(lhs, &rhs_contraction.op.contract_singleton(rhs).view()),
             (Some(lhs_contraction), Some(rhs_contraction)) => self.op.contract_pair(
-                &lhs_contraction.contract_singleton(lhs).view(),
-                &rhs_contraction.contract_singleton(rhs).view(),
+                &lhs_contraction.op.contract_singleton(lhs).view(),
+                &rhs_contraction.op.contract_singleton(rhs).view(),
             ),
         }
     }
@@ -407,14 +382,25 @@ impl<A> Debug for PairContraction<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "lhs_simplification: {:?}, rhs_simplification: {:?}, op: {:?}",
-            self.lhs_einsum_string, self.rhs_einsum_string, self.op
+            "PairContraction {{ \
+             lhs_simplification: {:?}, \
+             rhs_simplification: {:?}, \
+             method: {:?}, \
+             op: {:?}, \
+             simplified_einsum_string: {:?}",
+            self.lhs_simplification,
+            self.rhs_simplification,
+            self.method,
+            self.op,
+            self.simplified_einsum_string
         )
     }
 }
 
 /// Either a singleton contraction, in the case of a single input operand, or a list of pair contractions,
 /// given two or more input operands
+#[cfg_attr(feature = "serde", derive(Serialize))]
+#[derive(Debug)]
 pub enum EinsumPathSteps<A> {
     /// A `SingletonContraction` consists of some combination of permutation of the input axes,
     /// diagonalization of repeated indices, and summation across axes not present in the output
@@ -432,6 +418,7 @@ pub enum EinsumPathSteps<A> {
 /// and for each step in the path, how to perform the pairwise contraction. For example, two tensors might be contracted
 /// with one another by computing the Hadamard (element-wise) product of the tensors, while a different pair might be contracted
 /// by performing a matrix multiplication. The contractions that will be performed are fully specified within the `EinsumPath`.
+#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct EinsumPath<A> {
     /// The order in which tensors should be paired off and contracted with one another
     pub contraction_order: ContractionOrder,

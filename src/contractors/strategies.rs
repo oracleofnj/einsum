@@ -24,6 +24,11 @@
 use crate::SizedContraction;
 use std::collections::{HashMap, HashSet};
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Copy, Clone, Debug)]
 pub enum SingletonMethod {
     Identity,
     Permutation,
@@ -33,6 +38,8 @@ pub enum SingletonMethod {
     DiagonalizationAndSummation,
 }
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Copy, Clone, Debug)]
 pub struct SingletonSummary {
     num_summed_axes: usize,
     num_diagonalized_axes: usize,
@@ -85,7 +92,8 @@ impl SingletonSummary {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Copy, Clone)]
 pub enum PairMethod {
     HadamardProduct,
     HadamardProductGeneral,
@@ -99,6 +107,7 @@ pub enum PairMethod {
     StackedTensordotGeneral,
 }
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone)]
 pub struct PairSummary {
     num_stacked_axes: usize,
@@ -151,6 +160,9 @@ impl PairSummary {
             (0, 0, 0, _) => PairMethod::HadamardProductGeneral,
             (0, 0, _, 0) => PairMethod::ScalarMatrixProductGeneral,
             (0, _, 0, 0) => PairMethod::MatrixScalarProductGeneral,
+            // This contractor works, but appears to be slower
+            // than StackedTensordotGeneral
+            // (0, _, _, _) => PairMethod::BroadcastProductGeneral,
             (_, _, _, 0) => PairMethod::TensordotGeneral,
             (_, _, _, _) => PairMethod::StackedTensordotGeneral,
         }

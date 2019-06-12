@@ -44,6 +44,9 @@ use std::collections::HashSet;
 use super::{PairContractor, Permutation, SingletonContractor, SingletonViewer};
 use crate::SizedContraction;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 /// Helper function used throughout this module to find the positions of one set of indices
 /// in a second set of indices. The most common case is generating a permutation to
 /// be supplied to `permuted_axes`.
@@ -88,6 +91,7 @@ fn find_outputs_in_inputs_unique(output_indices: &[char], input_indices: &[char]
 /// [len_uncontracted_lhs, len_contracted_axes], reshaping the RHS into shape
 /// [len_contracted_axes, len_contracted_rhs], matrix-multiplying the two reshaped tensor,
 /// and then reshaping the result into [...self.output_shape].
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub struct TensordotFixedPosition {
     /// The product of the lengths of all the uncontracted axes in the LHS (or 1 if all of the
@@ -231,6 +235,7 @@ impl<A> PairContractor<A> for TensordotFixedPosition {
 ///
 /// 1. `jik,jkl->il` LHS tensor needs to be permuted `jik->ijk`
 /// 2. `ijk,klm->imlj` Output tensor needs to be permuted `ijlm->imlj`
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub struct TensordotGeneral {
     lhs_permutation: Permutation,
@@ -397,6 +402,7 @@ impl<A> PairContractor<A> for TensordotGeneral {
 /// `ij,ij->ij`.
 ///
 /// Contractions of the form `ij,ji->ij` need to use `HadamardProductGeneral` instead.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub struct HadamardProduct {}
 
@@ -439,6 +445,7 @@ impl<A> PairContractor<A> for HadamardProduct {
 ///
 /// 1. `ij,ij->ij` (Can also can use `HadamardProduct`)
 /// 2. `ij,ji->ij` (Can only use `HadamardProductGeneral`)
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub struct HadamardProductGeneral {
     lhs_permutation: Permutation,
@@ -493,6 +500,7 @@ impl<A> PairContractor<A> for HadamardProductGeneral {
 /// axes being summed before the two tensors are contracted. For example, in the contraction
 /// `i,jk->jk`, every element of the RHS tensor is simply multiplied by the sum of the elements
 /// of the LHS tensor.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub struct ScalarMatrixProduct {}
 
@@ -536,6 +544,7 @@ impl<A> PairContractor<A> for ScalarMatrixProduct {
 /// axes being summed before the two tensors are contracted. For example, in the contraction
 /// `i,jk->kj`, the output matrix is equal to the RHS matrix, transposed and then scalar-multiplied
 /// by the sum of the elements of the LHS tensor.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub struct ScalarMatrixProductGeneral {
     rhs_permutation: Permutation,
@@ -590,6 +599,7 @@ impl<A> PairContractor<A> for ScalarMatrixProductGeneral {
 /// axes being summed before the two tensors are contracted. For example, in the contraction
 /// `ij,k->ij`, every element of the LHS tensor is simply multiplied by the sum of the elements
 /// of the RHS tensor.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub struct MatrixScalarProduct {}
 
@@ -633,6 +643,7 @@ impl<A> PairContractor<A> for MatrixScalarProduct {
 /// axes being summed before the two tensors are contracted. For example, in the contraction
 /// `ij,k->ji`, the output matrix is equal to the LHS matrix, transposed and then scalar-multiplied
 /// by the sum of the elements of the RHS tensor.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub struct MatrixScalarProductGeneral {
     lhs_permutation: Permutation,
@@ -691,13 +702,14 @@ impl<A> PairContractor<A> for MatrixScalarProductGeneral {
 ///
 /// However, the limited benchmarking performed so far favored iterating along the
 /// `j` axis and computing the outer products `i,k->ik` for each subview of the tensors.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub struct BroadcastProductGeneral {
     lhs_permutation: Permutation,
     rhs_permutation: Permutation,
     lhs_insertions: Vec<usize>,
     rhs_insertions: Vec<usize>,
-    output_shape: IxDyn,
+    output_sizes: Vec<usize>,
     hadamard_product: HadamardProduct,
 }
 
@@ -735,7 +747,6 @@ impl BroadcastProductGeneral {
         let lhs_permutation = Permutation::from_indices(&lhs_indices);
         let rhs_permutation = Permutation::from_indices(&rhs_indices);
         let output_sizes: Vec<usize> = output_indices.iter().map(|c| sc.output_size[c]).collect();
-        let output_shape = IxDyn(&output_sizes);
         let hadamard_product = HadamardProduct::from_nothing();
 
         BroadcastProductGeneral {
@@ -743,7 +754,7 @@ impl BroadcastProductGeneral {
             rhs_permutation,
             lhs_insertions,
             rhs_insertions,
-            output_shape,
+            output_sizes,
             hadamard_product,
         }
     }
@@ -768,8 +779,9 @@ impl<A> PairContractor<A> for BroadcastProductGeneral {
         for &i in self.rhs_insertions.iter() {
             adjusted_rhs = adjusted_rhs.insert_axis(Axis(i));
         }
-        let broadcast_lhs = adjusted_lhs.broadcast(self.output_shape.clone()).unwrap();
-        let broadcast_rhs = adjusted_rhs.broadcast(self.output_shape.clone()).unwrap();
+        let output_shape = IxDyn(&self.output_sizes);
+        let broadcast_lhs = adjusted_lhs.broadcast(output_shape.clone()).unwrap();
+        let broadcast_rhs = adjusted_rhs.broadcast(output_shape).unwrap();
         self.hadamard_product
             .contract_pair(&broadcast_lhs, &broadcast_rhs)
     }
@@ -796,6 +808,7 @@ impl<A> PairContractor<A> for BroadcastProductGeneral {
 /// but is less performant than special-casing when there are no "stack" indices. It is also
 /// currently the only case that requires `.outer_iter_mut()` (which might make parallelizing
 /// operations more difficult).
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub struct StackedTensordotGeneral {
     lhs_permutation: Permutation,
