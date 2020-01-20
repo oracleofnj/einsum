@@ -1,8 +1,35 @@
 use ndarray::prelude::*;
+use approx::AbsDiffEq;
+use ndarray::{Data};
 use ndarray_einsum_beta::*;
 use ndarray_rand::RandomExt;
 use rand::distributions::Uniform;
 const TOL: f64 = 1e-10;
+
+trait AllClose {
+    fn my_all_close<S2, E>(&self, rhs: &ArrayBase<S2, E>, tol: f64) -> bool
+    where
+        S2: Data<Elem = f64>,
+        E: Dimension;
+}
+
+impl<S, D> AllClose for ArrayBase<S, D>
+where
+    D: Dimension,
+    S: Data<Elem = f64>,
+{
+    fn my_all_close<S2, E>(&self, rhs: &ArrayBase<S2, E>, tol: f64) -> bool
+    where
+        S2: Data<Elem = f64>,
+        E: Dimension
+    {
+        let self_dyn_view = self.view().into_dyn();
+        let rhs_dyn_view = rhs.view().into_dyn();
+
+        self_dyn_view.abs_diff_eq(&rhs_dyn_view, tol)
+    }
+}
+
 
 #[test]
 fn tp1() {
@@ -221,7 +248,7 @@ fn it_multiplies_two_matrices() {
     let correct_answer = a.dot(&b).into_dyn();
     let lib_output = einsum("ij,jk->ik", &[&a, &b]).unwrap();
 
-    assert!(correct_answer.all_close(&lib_output, TOL));
+    assert!(correct_answer.my_all_close(&lib_output, TOL));
 }
 
 #[test]
@@ -235,7 +262,7 @@ fn it_computes_the_trace() {
 
     let lib_output = einsum("ii->i", &[&square_matrix]).unwrap();
 
-    assert!(correct_answer.all_close(&lib_output, TOL));
+    assert!(correct_answer.my_all_close(&lib_output, TOL));
 }
 
 #[test]
@@ -248,9 +275,9 @@ fn it_transposes_a_matrix() {
     let tr2 = einsum("ij->ji", &[&rect_matrix]).unwrap();
     let tr3 = einsum("ji->ij", &[&rect_matrix]).unwrap();
 
-    assert!(correct_answer.all_close(&tr1, TOL));
-    assert!(correct_answer.all_close(&tr2, TOL));
-    assert!(correct_answer.all_close(&tr3, TOL));
+    assert!(correct_answer.my_all_close(&tr1, TOL));
+    assert!(correct_answer.my_all_close(&tr2, TOL));
+    assert!(correct_answer.my_all_close(&tr3, TOL));
 }
 
 #[test]
@@ -260,7 +287,7 @@ fn it_clones_a_matrix() {
     let correct_answer = rect_matrix.view().into_dyn();
 
     let cloned = einsum("ij->ij", &[&rect_matrix]).unwrap();
-    assert!(correct_answer.all_close(&cloned, TOL));
+    assert!(correct_answer.my_all_close(&cloned, TOL));
 }
 
 #[test]
@@ -279,7 +306,7 @@ fn it_collapses_a_singleton_with_noncontiguous_strides() {
     let ep = einsum_path("ii->", &[&square], OptimizationMethod::Naive).unwrap();
     let collapsed = ep.contract_operands(&[&square]);
 
-    assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
+    assert!(correct_answer.into_dyn().my_all_close(&collapsed, TOL));
 }
 
 #[test]
@@ -303,7 +330,7 @@ fn it_collapses_a_singleton_without_repeats() {
     let ep = einsum_path("ijkl->lij", &[&s], OptimizationMethod::Naive).unwrap();
     let collapsed = ep.contract_operands(&[&s]);
 
-    assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
+    assert!(correct_answer.into_dyn().my_all_close(&collapsed, TOL));
 }
 
 #[test]
@@ -323,7 +350,7 @@ fn it_diagonalizes_a_singleton() {
     let ep = einsum_path("jkiii->jik", &[&s], OptimizationMethod::Naive).unwrap();
     let collapsed = ep.contract_operands(&[&s]);
 
-    assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
+    assert!(correct_answer.into_dyn().my_all_close(&collapsed, TOL));
 }
 
 #[test]
@@ -343,7 +370,7 @@ fn it_collapses_a_singleton_with_multiple_repeats() {
     let ep = einsum_path("kjiji->ijk", &[&s], OptimizationMethod::Naive).unwrap();
     let collapsed = ep.contract_operands(&[&s]);
 
-    assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
+    assert!(correct_answer.into_dyn().my_all_close(&collapsed, TOL));
 }
 
 #[test]
@@ -362,7 +389,7 @@ fn it_collapses_a_singleton_with_a_repeat_that_gets_summed() {
 
     let ep = einsum_path("iij->j", &[&s], OptimizationMethod::Naive).unwrap();
     let collapsed = ep.contract_operands(&[&s]);
-    assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
+    assert!(correct_answer.into_dyn().my_all_close(&collapsed, TOL));
 }
 
 #[test]
@@ -383,7 +410,7 @@ fn it_collapses_a_singleton_with_multiple_repeats_that_get_summed() {
 
     let ep = einsum_path("iijkk->j", &[&s], OptimizationMethod::Naive).unwrap();
     let collapsed = ep.contract_operands(&[&s]);
-    assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
+    assert!(correct_answer.into_dyn().my_all_close(&collapsed, TOL));
 }
 
 #[test]
@@ -395,7 +422,7 @@ fn it_sums_a_singleton() {
 
     let ep = einsum_path("ijk->", &[&s], OptimizationMethod::Naive).unwrap();
     let collapsed = ep.contract_operands(&[&s]);
-    assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
+    assert!(correct_answer.into_dyn().my_all_close(&collapsed, TOL));
 }
 
 #[test]
@@ -416,7 +443,7 @@ fn it_collapses_a_singleton_with_multiple_sums() {
 
     let ep = einsum_path("ijk->k", &[&s], OptimizationMethod::Naive).unwrap();
     let collapsed = ep.contract_operands(&[&s]);
-    assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
+    assert!(correct_answer.into_dyn().my_all_close(&collapsed, TOL));
 }
 
 #[test]
@@ -440,7 +467,7 @@ fn it_collapses_a_singleton() {
     let ep = einsum_path("iijkl->lij", &[&s], OptimizationMethod::Naive).unwrap();
     let collapsed = ep.contract_operands(&[&s]);
 
-    assert!(correct_answer.into_dyn().all_close(&collapsed, TOL));
+    assert!(correct_answer.into_dyn().my_all_close(&collapsed, TOL));
 }
 
 #[test]
@@ -449,7 +476,7 @@ fn tensordot_handles_degenerate_lhs() {
     let rhs = rand_array((2, 3));
 
     let dotted = tensordot(&lhs, &rhs, &[], &[]);
-    assert!(rhs.into_dyn().all_close(&dotted, TOL));
+    assert!(rhs.into_dyn().my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -458,7 +485,7 @@ fn tensordot_handles_degenerate_rhs() {
     let rhs = arr0(1.);
 
     let dotted = tensordot(&lhs, &rhs, &[], &[]);
-    assert!(lhs.into_dyn().all_close(&dotted, TOL));
+    assert!(lhs.into_dyn().my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -478,7 +505,7 @@ fn deduped_handles_dot_product() {
     let correct_answer = arr0(lhs.dot(&rhs));
     let ep = einsum_path("i,i->", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -489,7 +516,7 @@ fn deduped_handles_hadamard_product() {
     let correct_answer = (&lhs * &rhs).into_dyn();
     let ep = einsum_path("i,i->i", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -506,7 +533,7 @@ fn deduped_handles_outer_product_vec_vec() {
 
     let ep = einsum_path("i,j->ij", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -525,8 +552,8 @@ fn deduped_handles_matrix_vector_1() {
 
     let ep = einsum_path("ij,j->i", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
-    assert!(correct_answer.all_close(&(lhs.dot(&rhs)), TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&(lhs.dot(&rhs)), TOL));
 }
 
 #[test]
@@ -545,8 +572,8 @@ fn deduped_handles_matrix_vector_2() {
 
     let ep = einsum_path("i,ij->j", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
-    assert!(correct_answer.all_close(&(lhs.dot(&rhs)), TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&(lhs.dot(&rhs)), TOL));
 }
 
 #[test]
@@ -565,8 +592,8 @@ fn deduped_handles_matrix_vector_3() {
 
     let ep = einsum_path("ij,i->j", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
-    assert!(correct_answer.all_close(&(rhs.dot(&lhs)), TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&(rhs.dot(&lhs)), TOL));
 }
 
 #[test]
@@ -585,8 +612,8 @@ fn deduped_handles_matrix_vector_4() {
 
     let ep = einsum_path("j,ij->i", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
-    assert!(correct_answer.all_close(&(rhs.dot(&lhs)), TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&(rhs.dot(&lhs)), TOL));
 }
 
 #[test]
@@ -603,7 +630,7 @@ fn deduped_handles_stacked_scalar_vector_product_1() {
 
     let ep = einsum_path("ij,i->ij", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -620,7 +647,7 @@ fn deduped_handles_stacked_scalar_vector_product_2() {
 
     let ep = einsum_path("ij,i->ji", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -637,7 +664,7 @@ fn deduped_handles_stacked_scalar_vector_product_3() {
 
     let ep = einsum_path("i,ji->ij", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -649,7 +676,7 @@ fn deduped_handles_summed_hadamard_product_aka_stacked_1d_tensordot_1() {
 
     let ep = einsum_path("ij,ij->i", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -661,7 +688,7 @@ fn deduped_handles_summed_hadamard_product_aka_stacked_1d_tensordot_2() {
 
     let ep = einsum_path("ij,ji->i", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -673,7 +700,7 @@ fn deduped_handles_summed_hadamard_product_aka_stacked_1d_tensordot_3() {
 
     let ep = einsum_path("ji,ij->i", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -694,7 +721,7 @@ fn deduped_handles_summed_hadamard_product_multiple_stacked_axes() {
 
     let ep = einsum_path("ijkl,jlki->kji", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -706,7 +733,7 @@ fn deduped_handles_2d_hadamard_product() {
 
     let ep = einsum_path("ij,ij->ij", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -719,7 +746,7 @@ fn deduped_handles_2d_hadamard_product_2() {
 
     let ep = einsum_path("ij,ij->ji", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -731,7 +758,7 @@ fn deduped_handles_2d_hadamard_product_3() {
 
     let ep = einsum_path("ji,ij->ij", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -742,7 +769,7 @@ fn deduped_handles_double_dot_product_mat_mat() {
     let correct_answer = arr0((&lhs * &rhs).sum());
     let ep = einsum_path("ij,ij->", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -760,7 +787,7 @@ fn deduped_handles_outer_product_vect_mat_1() {
     }
     let ep = einsum_path("ij,k->kij", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -778,7 +805,7 @@ fn deduped_handles_outer_product_vect_mat_2() {
     }
     let ep = einsum_path("k,ij->kij", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -798,7 +825,7 @@ fn deduped_handles_outer_product_mat_mat() {
     }
     let ep = einsum_path("lk,ij->kilj", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -809,7 +836,7 @@ fn deduped_handles_matrix_product_1() {
     let correct_answer = lhs.dot(&rhs);
     let ep = einsum_path("ij,jk", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -829,7 +856,7 @@ fn it_handles_stacked_matrix_product_1() {
     }
     let ep = einsum_path("nij,njk->nik", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -849,7 +876,7 @@ fn it_handles_stacked_matrix_product_2() {
     }
     let ep = einsum_path("nji,njk->nik", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -869,7 +896,7 @@ fn it_handles_stacked_matrix_product_3() {
     }
     let ep = einsum_path("jin,njk->nik", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -880,7 +907,7 @@ fn deduped_handles_matrix_product_2() {
     let correct_answer = lhs.dot(&rhs.t());
     let ep = einsum_path("ij,kj", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -899,7 +926,7 @@ fn deduped_handles_stacked_outer_product_1() {
 
     let ep = einsum_path("ij,ki->ijk", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -914,7 +941,7 @@ fn diagonals_product() {
 
     let ep = einsum_path("ii,ii->i", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -929,7 +956,7 @@ fn diagonals_product_lhs() {
 
     let ep = einsum_path("ii,i->i", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -944,7 +971,7 @@ fn diagonals_product_rhs() {
 
     let ep = einsum_path("i,ii->i", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -961,7 +988,7 @@ fn presum_lhs() {
 
     let ep = einsum_path("ij,ii->i", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -983,7 +1010,7 @@ fn it_tolerates_permuted_axes() {
 
     let ep = einsum_path("ijk,jkl->il", &[&lhs, &rhs], OptimizationMethod::Naive).unwrap();
     let dotted = ep.contract_operands(&[&lhs, &rhs]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -1010,7 +1037,7 @@ fn it_contracts_three_matrices() {
     )
     .unwrap();
     let dotted = ep.contract_operands(&[&op1, &op2, &op3]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -1042,7 +1069,7 @@ fn it_contracts_three_matrices_with_repeats_1() {
     )
     .unwrap();
     let dotted = ep.contract_operands(&[&op1, &op2, &op3]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -1074,7 +1101,7 @@ fn it_contracts_three_matrices_with_repeats_2() {
     )
     .unwrap();
     let dotted = ep.contract_operands(&[&op1, &op2, &op3]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -1106,7 +1133,7 @@ fn it_contracts_three_matrices_with_repeats_3() {
     )
     .unwrap();
     let dotted = ep.contract_operands(&[&op1, &op2, &op3]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
 
 #[test]
@@ -1137,5 +1164,5 @@ fn it_contracts_four_matrices() {
     )
     .unwrap();
     let dotted = ep.contract_operands(&[&op1, &op2, &op3, &op4]);
-    assert!(correct_answer.all_close(&dotted, TOL));
+    assert!(correct_answer.my_all_close(&dotted, TOL));
 }
