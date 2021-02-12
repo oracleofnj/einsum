@@ -12,14 +12,14 @@ categories = ["science"]
 [dependencies]
 regex = "1"
 lazy_static = "1"
-ndarray = { version = "0.13", features = ["approx"] }
+ndarray = { version = "0.14", features = ["approx"] }
 num-traits = "0.2"
 serde = { version = "1.0", optional = true, features = ["derive"] }
 
 [dev-dependencies]
-approx = "0.3.2"
-ndarray-rand = "0.11.0"
-rand="0.7"
+approx = "0.4"
+ndarray-rand = "0.13.0"
+rand="0.8"
 
 [profile.release]
 debug = true
