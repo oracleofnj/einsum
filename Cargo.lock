@@ -101,7 +101,7 @@ dependencies = [
 
 [[package]]
 name = "ndarray_einsum_beta"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "approx",
  "lazy_static",
