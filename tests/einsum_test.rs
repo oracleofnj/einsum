@@ -1,6 +1,5 @@
 use ndarray::prelude::*;
-use approx::AbsDiffEq;
-use ndarray::{Data};
+use ndarray::Data;
 use ndarray_einsum_beta::*;
 use ndarray_rand::RandomExt;
 use rand::distributions::Uniform;
@@ -21,7 +20,7 @@ where
     fn my_all_close<S2, E>(&self, rhs: &ArrayBase<S2, E>, tol: f64) -> bool
     where
         S2: Data<Elem = f64>,
-        E: Dimension
+        E: Dimension,
     {
         let self_dyn_view = self.view().into_dyn();
         let rhs_dyn_view = rhs.view().into_dyn();
@@ -29,7 +28,6 @@ where
         self_dyn_view.abs_diff_eq(&rhs_dyn_view, tol)
     }
 }
-
 
 #[test]
 fn tp1() {
