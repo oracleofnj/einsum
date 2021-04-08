@@ -12,13 +12,13 @@ categories = ["science"]
 [dependencies]
 regex = "1"
 lazy_static = "1"
-ndarray = { version = "0.14", features = ["approx"] }
+ndarray = { version = "0.15", features = ["approx"] }
 num-traits = "0.2"
 serde = { version = "1.0", optional = true, features = ["derive"] }
 
 [dev-dependencies]
 approx = "0.4"
-ndarray-rand = "0.13.0"
+ndarray-rand = "0.14.0"
 rand="0.8"
 
 [profile.release]
@@ -27,3 +27,4 @@ lto = true
 
 [package.metadata.docs.rs]
 rustdoc-args = [ "--document-private-items" ]
+
