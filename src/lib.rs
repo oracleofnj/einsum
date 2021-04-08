@@ -164,8 +164,6 @@
 //!     c.dot(&d).into_dyn()
 //! );
 //! ```
-use std::collections::HashMap;
-
 use ndarray::prelude::*;
 use ndarray::{Data, IxDyn, LinalgScalar};
 
@@ -294,5 +292,3 @@ where
     );
     tensordotter.contract_pair(&lhs.view().into_dyn(), &rhs.view().into_dyn())
 }
-
-mod slow_versions;
